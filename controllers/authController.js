@@ -15,7 +15,60 @@ const signToken = (account, additionalData = {}) => {
     ...additionalData
   });
 };
+// In controllers/authController.js, update the adminLogin method:
+exports.adminLogin = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
 
+    const admin = await models.auth_accounts.findOne({
+      where: { email, role: "admin" },
+      include: [
+        {
+          model: models.admin_users,
+          as: "admin_user"
+        }
+      ]
+    });
+
+    if (!admin) {
+      return res.status(404).json({ error: "Admin not found" });
+    }
+
+    const isValid = await bcrypt.compare(password, admin.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid password" });
+    }
+
+    const token = jwt.sign(
+      {
+        account_id: admin.account_id,  // Use account_id instead of id
+        role: "admin",
+        admin_role: admin.admin_user?.admin_role || "admin",
+        admin_id: admin.admin_user?.admin_id
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "8h" }  // Longer expiry for admin sessions
+    );
+
+    admin.last_login_at = new Date();
+    await admin.save();
+
+    res.json({
+      message: "Login successful",
+      token,
+      role: "admin",
+      admin_role: admin.admin_user?.admin_role || "admin",
+      account: {
+        account_id: admin.account_id,
+        email: admin.email,
+        role: admin.role
+      }
+    });
+  } catch (err) {
+    console.error('Admin login error:', err);
+    next(err);
+  }
+};
 // -------------------------
 // Helper: Redirect Path
 // -------------------------

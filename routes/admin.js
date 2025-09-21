@@ -1,3 +1,4 @@
+// routes/admin.js
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
@@ -23,13 +24,13 @@ router.put('/orders/:orderId/status', adminController.updateOrderStatus);
 
 // Rider management
 router.get('/riders', adminController.getAllRiders);
-router.post('/riders', adminController.createRider); // Added for createRider
-router.post('/riders/approve/:riderId', adminController.approveRider);
+router.post('/riders', adminController.createRider);
+router.put('/riders/:riderId/approve', adminController.approveRider);  // Fixed pattern
 router.put('/riders/:riderId/status', adminController.updateRiderStatus);
 
 // Vendor management
 router.get('/vendors', adminController.getAllVendors);
-router.post('/vendors/approve/:vendorId', adminController.approveVendor);
+router.put('/vendors/:vendorId/approve', adminController.approveVendor);  // Fixed pattern
 router.put('/vendors/:vendorId/status', adminController.updateVendorStatus);
 
 // Product management
@@ -38,8 +39,8 @@ router.put('/products/:productId', adminController.updateProduct);
 router.delete('/products/:productId', adminController.deleteProduct);
 
 // System settings
-router.get('/settings', adminController.getSystemSettings);
-router.put('/settings', adminController.updateSystemSettings);
+router.get('/system/settings', adminController.getSystemSettings);  // Fixed path
+router.put('/system/settings', adminController.updateSystemSettings);  // Fixed path
 
 // Audit logs
 router.get('/audit-logs', adminController.getAuditLogs);
