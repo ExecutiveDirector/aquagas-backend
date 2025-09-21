@@ -7,6 +7,16 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       primaryKey: true
     },
+    account_id: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: false,
+      unique: true,
+      references: {
+        model: 'auth_accounts',
+        key: 'account_id'
+      }
+    },
+
     business_name: {
       type: DataTypes.STRING(255),
       allowNull: false

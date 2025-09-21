@@ -43,6 +43,9 @@ const corsOptions = {
       'http://localhost:5173', // Add frontend
       'https://smartgas-admin.com',
       'https://smartgas.co.ke',
+      'https://preview.flutlab.io',   // ✅ 
+      'https://2553qn6p-400.uks1.devtunnels.ms/',
+
     ];
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -53,7 +56,9 @@ const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 200,
 };
-app.use(cors(corsOptions));
+//app.use(cors(corsOptions));
+app.use(cors({ origin: '*', credentials: true }));
+
 
 // Rate limiting
 const limiter = rateLimit({
