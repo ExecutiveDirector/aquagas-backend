@@ -48,14 +48,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'system_events',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "event_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "event_id" },
+      //   ]
+      // },
       {
         name: "idx_event_type",
         using: "BTREE",

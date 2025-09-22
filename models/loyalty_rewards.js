@@ -69,14 +69,14 @@ module.exports = function(sequelize, DataTypes) {
     hasTrigger: true,
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "reward_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "reward_id" },
+      //   ]
+      // },
       {
         name: "idx_points_required",
         using: "BTREE",

@@ -54,14 +54,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'loyalty_point_transactions',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "point_transaction_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "point_transaction_id" },
+      //   ]
+      // },
       {
         name: "idx_user",
         using: "BTREE",

@@ -57,14 +57,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'support_messages',
     timestamps: false,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "message_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "message_id" },
+      //   ]
+      // },
       {
         name: "idx_ticket",
         using: "BTREE",

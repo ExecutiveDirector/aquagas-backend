@@ -83,14 +83,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'referrals',
     timestamps: false,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "referral_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "referral_id" },
+      //   ]
+      // },
       {
         name: "uk_referrer_referee",
         unique: true,

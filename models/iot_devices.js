@@ -101,14 +101,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'iot_devices',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "device_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "device_id" },
+      //   ]
+      // },
       {
         name: "device_serial",
         unique: true,

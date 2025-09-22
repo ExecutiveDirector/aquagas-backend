@@ -129,14 +129,14 @@ module.exports = function(sequelize, DataTypes) {
     hasTrigger: true,
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "vendor_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "vendor_id" },
+      //   ]
+      // },
       {
         name: "business_registration_no",
         unique: true,

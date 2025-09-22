@@ -73,14 +73,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'audit_logs',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "log_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "log_id" },
+      //   ]
+      // },
       {
         name: "idx_entity",
         using: "BTREE",

@@ -105,14 +105,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'transactions',
     timestamps: false,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "transaction_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "transaction_id" },
+      //   ]
+      // },
       {
         name: "transaction_ref",
         unique: true,

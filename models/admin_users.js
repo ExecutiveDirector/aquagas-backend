@@ -43,14 +43,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'admin_users',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "admin_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "admin_id" },
+      //   ]
+      // },
       {
         name: "account_id",
         unique: true,

@@ -41,14 +41,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'system_settings',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "setting_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "setting_id" },
+      //   ]
+      // },
       {
         name: "setting_key",
         unique: true,

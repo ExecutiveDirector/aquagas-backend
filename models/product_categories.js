@@ -43,14 +43,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'product_categories',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "category_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "category_id" },
+      //   ]
+      // },
       {
         name: "category_name",
         unique: true,

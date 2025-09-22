@@ -42,14 +42,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'delivery_routes',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "route_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "route_id" },
+      //   ]
+      // },
       {
         name: "idx_assignment",
         using: "BTREE",

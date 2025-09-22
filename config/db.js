@@ -12,10 +12,10 @@ const sequelize = new Sequelize(
     logging: false,
     define: {
       freezeTableName: true,
-      underscored: true,   // snake_case naming
-      timestamps: false    // disable createdAt/updatedAt globally
-      // ⚠️ Do not define createdAt/updatedAt if timestamps=false
+      underscored: true,
+      timestamps: false   // global default
     }
+    
   }
 );
 

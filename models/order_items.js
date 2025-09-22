@@ -46,14 +46,14 @@ module.exports = function(sequelize, DataTypes) {
     hasTrigger: true,
     timestamps: false,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "item_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "item_id" },
+      //   ]
+      // },
       {
         name: "idx_order",
         using: "BTREE",

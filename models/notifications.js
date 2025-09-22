@@ -119,14 +119,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'notifications',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "notification_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "notification_id" },
+      //   ]
+      // },
       {
         name: "admin_id",
         using: "BTREE",

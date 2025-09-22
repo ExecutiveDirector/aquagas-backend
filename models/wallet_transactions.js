@@ -53,14 +53,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'wallet_transactions',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "wallet_transaction_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "wallet_transaction_id" },
+      //   ]
+      // },
       {
         name: "idx_wallet",
         using: "BTREE",

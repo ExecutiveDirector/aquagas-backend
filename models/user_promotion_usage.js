@@ -50,14 +50,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'user_promotion_usage',
     timestamps: false,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "usage_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "usage_id" },
+      //   ]
+      // },
       {
         name: "promotion_id",
         using: "BTREE",

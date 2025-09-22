@@ -102,14 +102,14 @@ module.exports = function(sequelize, DataTypes) {
     tableName: 'user_subscriptions',
     timestamps: true,
     indexes: [
-      {
-        name: "PRIMARY",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "subscription_id" },
-        ]
-      },
+      // {
+      //   name: "PRIMARY",
+      //   unique: true,
+      //   using: "BTREE",
+      //   fields: [
+      //     { name: "subscription_id" },
+      //   ]
+      // },
       {
         name: "idx_user",
         using: "BTREE",
