@@ -8,15 +8,21 @@ const sequelize = new Sequelize(
   {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
-    dialect: 'mysql',
-    logging: false,
+    dialect: process.env.DB_DIALECT || 'mysql',
+    logging: process.env.DB_LOGGING === 'true',
+    dialectOptions: {
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+    },
     define: {
       freezeTableName: true,
       underscored: true,
-      timestamps: false   // global default
+      timestamps: false
     }
-    
   }
 );
+
+sequelize.authenticate()
+  .then(() => console.log('✅ DB connected successfully'))
+  .catch(err => console.error('❌ DB connection error:', err));
 
 module.exports = sequelize;
