@@ -675,7 +675,11 @@ exports.getCategories = async (req, res, next) => {
     const categories = await models.product_categories.findAll({
       order: [['sort_order', 'ASC']],
     });
-    res.json(categories);
+    res.json({
+      success: true,
+      data: categories,
+      message: 'Categories fetched successfully'
+    });
   } catch (err) {
     next(err);
   }
@@ -694,14 +698,20 @@ exports.createCategory = async (req, res, next) => {
     } = req.body;
 
     if (!category_name) {
-      return res.status(400).json({ message: 'category_name is required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'category_name is required' 
+      });
     }
 
     const existing = await models.product_categories.findOne({
       where: { category_name },
     });
     if (existing) {
-      return res.status(409).json({ message: 'Category name already exists' });
+      return res.status(409).json({ 
+        success: false,
+        message: 'Category name already exists' 
+      });
     }
 
     const newCategory = await models.product_categories.create({
@@ -714,9 +724,11 @@ exports.createCategory = async (req, res, next) => {
     });
 
     res.status(201).json({
-      message: 'Category created successfully',
-      category: newCategory,
+      success: true,
+      data: newCategory,
+      message: 'Category created successfully'
     });
+
   } catch (err) {
     next(err);
   }
@@ -730,11 +742,18 @@ exports.updateCategory = async (req, res, next) => {
 
     const category = await models.product_categories.findByPk(categoryId);
     if (!category) {
-      return res.status(404).json({ message: 'Category not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Category not found' 
+      });
     }
 
     await category.update(updates);
-    res.json({ message: 'Category updated successfully', category });
+    res.json({ 
+      success: true,
+      data: category,
+      message: 'Category updated successfully' 
+    });
   } catch (err) {
     next(err);
   }
@@ -747,11 +766,17 @@ exports.deleteCategory = async (req, res, next) => {
 
     const category = await models.product_categories.findByPk(categoryId);
     if (!category) {
-      return res.status(404).json({ message: 'Category not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Category not found' 
+      });
     }
 
     await category.destroy();
-    res.json({ message: 'Category deleted successfully' });
+    res.json({ 
+      success: true,
+      message: 'Category deleted successfully' 
+    });
   } catch (err) {
     next(err);
   }
