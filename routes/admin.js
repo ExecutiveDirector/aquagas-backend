@@ -38,11 +38,17 @@ router.post('/products', adminController.createProduct);
 router.put('/products/:productId', adminController.updateProduct);
 router.delete('/products/:productId', adminController.deleteProduct);
 
+router.get('/categories', adminController.getCategories);
+router.post('/categories', adminController.createCategory);
+router.put('/categories/:categoryId', adminController.updateCategory);
+router.delete('/categories/:categoryId', adminController.deleteCategory);
+
 // System settings
 router.get('/system/settings', adminController.getSystemSettings);  // Fixed path
 router.put('/system/settings', adminController.updateSystemSettings);  // Fixed path
 
 // Audit logs
 router.get('/audit-logs', adminController.getAuditLogs);
+
 
 module.exports = router;

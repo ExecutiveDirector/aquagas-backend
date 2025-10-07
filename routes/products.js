@@ -6,6 +6,7 @@ const { authenticateToken, optionalAuth } = require('../middleware/authMiddlewar
 
 // Public routes - product browsing
 router.get('/', optionalAuth, productController.getProducts);
+router.get('/nearby', optionalAuth, productController.getNearbyProducts); // NEW
 router.get('/categories', productController.getCategories);
 router.get('/featured', productController.getFeaturedProducts);
 router.get('/search', productController.searchProducts);

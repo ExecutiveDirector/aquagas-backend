@@ -19,5 +19,6 @@ router.get('/tickets/:ticketId/messages', optionalAuth, supportController.getTic
 // FAQ and help
 router.get('/faq', supportController.getFAQ);
 router.get('/help-topics', supportController.getHelpTopics);
-
+// GET /api/support/faq - Get all FAQs (with optional category filter)
+// POST /api/support/faq/:id/helpful - Increment helpful count for FAQ
 module.exports = router;

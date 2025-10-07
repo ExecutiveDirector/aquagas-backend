@@ -668,3 +668,91 @@ exports.getAuditLogs = async (req, res, next) => {
     next(err);
   }
 };
+
+// 🟢 Get all categories
+exports.getCategories = async (req, res, next) => {
+  try {
+    const categories = await models.product_categories.findAll({
+      order: [['sort_order', 'ASC']],
+    });
+    res.json(categories);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 🟢 Create a new category
+exports.createCategory = async (req, res, next) => {
+  try {
+    const {
+      category_name,
+      parent_category_id = null,
+      description = null,
+      icon_url = null,
+      sort_order = 0,
+      is_active = 1,
+    } = req.body;
+
+    if (!category_name) {
+      return res.status(400).json({ message: 'category_name is required' });
+    }
+
+    const existing = await models.product_categories.findOne({
+      where: { category_name },
+    });
+    if (existing) {
+      return res.status(409).json({ message: 'Category name already exists' });
+    }
+
+    const newCategory = await models.product_categories.create({
+      category_name,
+      parent_category_id,
+      description,
+      icon_url,
+      sort_order,
+      is_active,
+    });
+
+    res.status(201).json({
+      message: 'Category created successfully',
+      category: newCategory,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 🟡 Update an existing category
+exports.updateCategory = async (req, res, next) => {
+  try {
+    const { categoryId } = req.params;
+    const updates = req.body;
+
+    const category = await models.product_categories.findByPk(categoryId);
+    if (!category) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
+    await category.update(updates);
+    res.json({ message: 'Category updated successfully', category });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 🔴 Delete a category
+exports.deleteCategory = async (req, res, next) => {
+  try {
+    const { categoryId } = req.params;
+
+    const category = await models.product_categories.findByPk(categoryId);
+    if (!category) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
+    await category.destroy();
+    res.json({ message: 'Category deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+};
