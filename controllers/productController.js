@@ -372,10 +372,27 @@ exports.getNearbyProducts = async (req, res, next) => {
   try {
     const { lat, lng, radius = 10 } = req.query;
 
+    // Validate required parameters
     if (!lat || !lng) {
-      return res.status(400).json({ error: 'Latitude and longitude required' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Latitude and longitude are required' 
+      });
     }
 
+    // Validate and sanitize inputs
+    const userLat = parseFloat(lat);
+    const userLng = parseFloat(lng);
+    const searchRadius = parseFloat(radius);
+
+    if (isNaN(userLat) || isNaN(userLng) || isNaN(searchRadius)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid latitude, longitude, or radius values'
+      });
+    }
+
+    // Use parameterized query to prevent SQL injection
     const query = `
       SELECT 
         p.product_id,
@@ -399,11 +416,14 @@ exports.getNearbyProducts = async (req, res, next) => {
         vo.latitude as vendor_latitude,
         vo.longitude as vendor_longitude,
         vo.contact_phone,
+        vo.address_line_1,
+        vo.city,
+        vo.county,
         (6371 * acos(
-          cos(radians(${parseFloat(lat)})) 
+          cos(radians(?)) 
           * cos(radians(vo.latitude)) 
-          * cos(radians(vo.longitude) - radians(${parseFloat(lng)})) 
-          + sin(radians(${parseFloat(lat)})) 
+          * cos(radians(vo.longitude) - radians(?)) 
+          + sin(radians(?)) 
           * sin(radians(vo.latitude))
         )) as distance_km
       FROM products p
@@ -414,49 +434,80 @@ exports.getNearbyProducts = async (req, res, next) => {
         AND vi.is_available = 1
         AND vi.current_stock > 0
         AND v.is_active = 1
-      HAVING distance_km <= ${parseFloat(radius)}
+      HAVING distance_km <= ?
       ORDER BY distance_km ASC, v.rating DESC, p.is_featured DESC
     `;
 
-    const [results] = await sequelize.query(query);
+    // Execute query with parameterized values
+    const [results] = await sequelize.query(query, {
+      replacements: [userLat, userLng, userLat, searchRadius],
+      type: sequelize.QueryTypes.SELECT
+    });
 
-    // Group by vendor
-    const vendorMap = {};
+    // Handle empty results
+    if (!results || results.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: `No products found within ${searchRadius} km`,
+        count: 0,
+        total_products: 0,
+        radius_km: searchRadius,
+        user_location: {
+          latitude: userLat,
+          longitude: userLng
+        },
+        vendors: []
+      });
+    }
+
+    // Group products by vendor (using vendor_id + outlet_id as unique key)
+    const vendorMap = new Map();
+
     results.forEach(row => {
-      const vendorName = row.vendor_name;
+      // Create unique key for vendor outlet combination
+      const vendorKey = `${row.vendor_id}-${row.outlet_id}`;
       
-      if (!vendorMap[vendorName]) {
-        vendorMap[vendorName] = {
-          name: vendorName,
+      if (!vendorMap.has(vendorKey)) {
+        vendorMap.set(vendorKey, {
+          id: row.vendor_id.toString(),
           vendor_id: row.vendor_id,
+          name: row.vendor_name,
+          outlet_id: row.outlet_id,
+          outlet_name: row.outlet_name,
           rating: parseFloat(row.rating) || 0,
           location: {
             latitude: parseFloat(row.vendor_latitude),
             longitude: parseFloat(row.vendor_longitude)
           },
-          distance_km: parseFloat(row.distance_km),
+          address: row.address_line_1 || '',
+          city: row.city || '',
+          county: row.county || '',
+          contact_phone: row.contact_phone || '',
+          distance_km: parseFloat(row.distance_km).toFixed(2),
           products: []
-        };
+        });
       }
 
-      vendorMap[vendorName].products.push({
+      // Add product to vendor's products array
+      vendorMap.get(vendorKey).products.push({
         id: row.product_id.toString(),
         product_id: row.product_id,
         title: row.product_name,
         product_name: row.product_name,
-        product_code: row.product_code,
-        brand: row.brand,
-        description: row.description,
-        size_specification: row.size_specification,
+        product_code: row.product_code || '',
+        brand: row.brand || '',
+        description: row.description || '',
+        size_specification: row.size_specification || '',
         price: parseFloat(row.price || row.base_price),
         base_price: parseFloat(row.base_price),
         image: extractFirstImage(row.product_images),
-        stock: row.stock,
-        availability: row.is_available ? 'Available' : 'Out of Stock',
+        stock: parseInt(row.stock) || 0,
+        availability: row.is_available && row.stock > 0 ? 'Available' : 'Out of Stock',
         isActive: Boolean(row.is_active),
         is_active: Boolean(row.is_active),
         is_featured: Boolean(row.is_featured),
-        vendor_name: vendorName,
+        rating: parseFloat(row.rating) || 0,
+        vendor_name: row.vendor_name,
         vendor_latitude: parseFloat(row.vendor_latitude),
         vendor_longitude: parseFloat(row.vendor_longitude),
         outlet_id: row.outlet_id,
@@ -465,14 +516,87 @@ exports.getNearbyProducts = async (req, res, next) => {
       });
     });
 
-    const vendors = Object.values(vendorMap);
+    // Convert map to array and sort by distance
+    const vendors = Array.from(vendorMap.values())
+      .sort((a, b) => parseFloat(a.distance_km) - parseFloat(b.distance_km));
 
-    res.json({ vendors });
+    // Calculate total products across all vendors
+    const totalProducts = vendors.reduce((sum, vendor) => sum + vendor.products.length, 0);
+
+    // Return successful response with metadata
+    res.status(200).json({
+      success: true,
+      count: vendors.length,
+      total_products: totalProducts,
+      radius_km: searchRadius,
+      user_location: {
+        latitude: userLat,
+        longitude: userLng
+      },
+      vendors: vendors
+    });
+
   } catch (err) {
     console.error('Error fetching nearby products:', err);
-    next(err);
+    
+    // Return structured error response
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch nearby products',
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    });
   }
 };
+
+// Helper function to extract first image from product_images JSON
+function extractFirstImage(productImages) {
+  // Default placeholder image
+  const defaultImage = '/images/placeholder-product.png';
+  
+  if (!productImages) {
+    return defaultImage;
+  }
+
+  try {
+    // If it's already a string URL
+    if (typeof productImages === 'string' && productImages.startsWith('http')) {
+      return productImages;
+    }
+
+    // If it's a JSON string, parse it
+    if (typeof productImages === 'string') {
+      const parsed = JSON.parse(productImages);
+      
+      // If array, return first element
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed[0];
+      }
+      
+      // If object with url property
+      if (parsed.url) {
+        return parsed.url;
+      }
+      
+      // If it's just a string after parsing
+      if (typeof parsed === 'string') {
+        return parsed;
+      }
+    }
+
+    // If it's already an array
+    if (Array.isArray(productImages) && productImages.length > 0) {
+      return productImages[0];
+    }
+
+    return defaultImage;
+  } catch (error) {
+    console.error('Error parsing product images:', error);
+    return defaultImage;
+  }
+}
+
+// // Export the helper function if needed elsewhere
+ exports.extractFirstImage = extractFirstImage;
 
 // Helper functions
 function extractFirstImage(productImagesJson) {
@@ -519,7 +643,3 @@ function toRadians(degrees) {
 // exports.addProductReview = async (req, res, next) => {
 //   res.status(501).json({ message: 'Reviews not yet implemented' });
 // };
-
-
-
-// module.exports = exports;
