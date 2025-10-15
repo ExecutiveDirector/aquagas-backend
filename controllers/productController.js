@@ -368,9 +368,12 @@ exports.addProductReview = async (req, res, next) => {
 };
 
 // Get products nearby with vendor info
+// controllers/productController.js
+// CORRECTED getNearbyProducts function
+
 exports.getNearbyProducts = async (req, res, next) => {
   try {
-    const { lat, lng, radius = 10 } = req.query;
+    const { lat, lng, radius = 50 } = req.query; // Changed default from 10 to 50
 
     // Validate required parameters
     if (!lat || !lng) {
@@ -392,7 +395,9 @@ exports.getNearbyProducts = async (req, res, next) => {
       });
     }
 
-    // Use parameterized query to prevent SQL injection
+    console.log(`🔍 Searching for products near (${userLat}, ${userLng}) within ${searchRadius}km`);
+
+    // FIXED: Use parameterized query correctly with sequelize.query
     const query = `
       SELECT 
         p.product_id,
@@ -420,11 +425,13 @@ exports.getNearbyProducts = async (req, res, next) => {
         vo.city,
         vo.county,
         (6371 * acos(
-          cos(radians(?)) 
-          * cos(radians(vo.latitude)) 
-          * cos(radians(vo.longitude) - radians(?)) 
-          + sin(radians(?)) 
-          * sin(radians(vo.latitude))
+          GREATEST(-1, LEAST(1,
+            cos(radians(?)) 
+            * cos(radians(vo.latitude)) 
+            * cos(radians(vo.longitude) - radians(?)) 
+            + sin(radians(?)) 
+            * sin(radians(vo.latitude))
+          ))
         )) as distance_km
       FROM products p
       INNER JOIN vendor_inventory vi ON p.product_id = vi.product_id
@@ -438,11 +445,13 @@ exports.getNearbyProducts = async (req, res, next) => {
       ORDER BY distance_km ASC, v.rating DESC, p.is_featured DESC
     `;
 
-    // Execute query with parameterized values
-    const [results] = await sequelize.query(query, {
+    // FIXED: Correct way to execute raw query with Sequelize
+    const results = await sequelize.query(query, {
       replacements: [userLat, userLng, userLat, searchRadius],
-      type: sequelize.QueryTypes.SELECT
+      type: sequelize.QueryTypes.SELECT // Changed from SELECT to QueryTypes.SELECT
     });
+
+    console.log(`📦 Found ${results.length} product records`);
 
     // Handle empty results
     if (!results || results.length === 0) {
@@ -511,8 +520,7 @@ exports.getNearbyProducts = async (req, res, next) => {
         vendor_latitude: parseFloat(row.vendor_latitude),
         vendor_longitude: parseFloat(row.vendor_longitude),
         outlet_id: row.outlet_id,
-        outlet_name: row.outlet_name,
-        sales: 0 // Can be calculated from order_items if needed
+        outlet_name: row.outlet_name
       });
     });
 
@@ -522,6 +530,8 @@ exports.getNearbyProducts = async (req, res, next) => {
 
     // Calculate total products across all vendors
     const totalProducts = vendors.reduce((sum, vendor) => sum + vendor.products.length, 0);
+
+    console.log(`✅ Returning ${vendors.length} vendors with ${totalProducts} products`);
 
     // Return successful response with metadata
     res.status(200).json({
@@ -537,7 +547,7 @@ exports.getNearbyProducts = async (req, res, next) => {
     });
 
   } catch (err) {
-    console.error('Error fetching nearby products:', err);
+    console.error('❌ Error fetching nearby products:', err);
     
     // Return structured error response
     res.status(500).json({
@@ -547,6 +557,55 @@ exports.getNearbyProducts = async (req, res, next) => {
     });
   }
 };
+
+// Helper function to extract first image from product_images JSON
+function extractFirstImage(productImages) {
+  // Default placeholder image
+  const defaultImage = '/images/placeholder-product.png';
+  
+  if (!productImages) {
+    return defaultImage;
+  }
+
+  try {
+    // If it's already a string URL
+    if (typeof productImages === 'string' && productImages.startsWith('http')) {
+      return productImages;
+    }
+
+    // If it's a JSON string, parse it
+    if (typeof productImages === 'string') {
+      const parsed = JSON.parse(productImages);
+      
+      // If array, return first element
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed[0];
+      }
+      
+      // If object with url property
+      if (parsed.url) {
+        return parsed.url;
+      }
+      
+      // If it's just a string after parsing
+      if (typeof parsed === 'string') {
+        return parsed;
+      }
+    }
+
+    // If it's already an array
+    if (Array.isArray(productImages) && productImages.length > 0) {
+      return productImages[0];
+    }
+
+    return defaultImage;
+  } catch (error) {
+    console.error('Error parsing product images:', error);
+    return defaultImage;
+  }
+}
+
+
 
 // Helper function to extract first image from product_images JSON
 function extractFirstImage(productImages) {
@@ -643,3 +702,4 @@ function toRadians(degrees) {
 // exports.addProductReview = async (req, res, next) => {
 //   res.status(501).json({ message: 'Reviews not yet implemented' });
 // };
+module.exports = exports;
