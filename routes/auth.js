@@ -1,4 +1,4 @@
-// routes/auth.js - Fixed Authentication routes
+// routes/auth.js - Phone OTP Authentication Routes
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
@@ -12,17 +12,24 @@ const {
 } = require('../middleware/authMiddleware');
 
 // ------------------------
-// Authentication & Login
+// Traditional Login (Email/Password)
 // ------------------------
 router.post('/login', authController.login);
 router.post('/logout', authController.logout);
 
 // ------------------------
-// Registration per role (PUBLIC - no auth required)
+// Phone OTP Authentication (NEW)
+// ------------------------
+router.post('/send-otp', authController.sendOTP);
+router.post('/verify-otp', authController.verifyOTP);
+router.post('/register/phone', authController.registerWithPhone);
+
+// ------------------------
+// Traditional Registration per role
 // ------------------------
 router.post('/register/user', authController.registerUser);
-router.post('/register/vendor', authController.registerVendor); // ✅ Removed requireVendorRole
-router.post('/register/rider', authController.registerRider);   // ✅ Removed requireRiderRole
+router.post('/register/vendor', authController.registerVendor);
+router.post('/register/rider', authController.registerRider);
 
 // Only super_admin can register new admins
 router.post('/register/admin',
@@ -39,11 +46,12 @@ router.put('/profile', authenticateToken, authController.updateProfile);
 router.post('/change-password', authenticateToken, authController.changePassword);
 
 // ------------------------
-// Password reset & verification (PUBLIC)
+// Password reset & verification
 // ------------------------
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
 router.post('/verify-phone', authController.verifyPhone);
+router.post('/send-phone-verification', authController.sendPhoneVerification);
 
 // ------------------------
 // Protected role-specific test routes
