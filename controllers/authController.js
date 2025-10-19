@@ -1479,7 +1479,6 @@ exports.registerWithPhone = async (req, res, next) => {
       });
     }
 
-    // Validate phone format
     if (!phone.match(/^\+\d{10,15}$/)) {
       await t.rollback();
       return res.status(400).json({ 
@@ -1487,7 +1486,6 @@ exports.registerWithPhone = async (req, res, next) => {
       });
     }
 
-    // Validate email if provided
     if (email && !validator.isEmail(email)) {
       await t.rollback();
       return res.status(400).json({ error: 'Invalid email format' });
@@ -1522,15 +1520,19 @@ exports.registerWithPhone = async (req, res, next) => {
       console.log('✅ Creating new phone-based user account');
     }
 
-    // Create auth account (no password for phone-only auth)
+    // ✅ FIXED: Generate dummy password hash for phone-only accounts
+    const dummyPassword = crypto.randomBytes(32).toString('hex');
+    const passwordHash = await bcrypt.hash(dummyPassword, 10);
+
+    // Create auth account
     const authAccount = await models.auth_accounts.create(
       {
         role: 'user',
         email: email ? email.trim().toLowerCase() : null,
         phone_number: phone,
-        password_hash: null, // Phone-based auth doesn't require password
+        password_hash: passwordHash, // ✅ Use dummy hash
         is_active: true,
-        phone_verified: true, // Already verified via OTP
+        phone_verified: true,
       },
       { transaction: t }
     );
@@ -1599,7 +1601,6 @@ exports.registerWithPhone = async (req, res, next) => {
     await t.rollback();
     console.error('❌ Phone registration error:', err);
     
-    // Handle specific errors
     if (err.name === 'SequelizeUniqueConstraintError') {
       return res.status(409).json({
         error: 'Phone number or email already registered',
