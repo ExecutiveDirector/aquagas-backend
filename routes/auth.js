@@ -44,6 +44,7 @@ router.post('/register/admin',
 router.get('/profile', authenticateToken, authController.getProfile);
 router.put('/profile', authenticateToken, authController.updateProfile);
 router.post('/change-password', authenticateToken, authController.changePassword);
+router.get('/check-password-status', authenticate, authController.checkPasswordStatus);
 
 // ------------------------
 // Password reset & verification

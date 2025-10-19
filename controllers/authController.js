@@ -1053,45 +1053,45 @@ exports.updateProfile = async (req, res, next) => {
 // -------------------------
 // CHANGE PASSWORD
 // -------------------------
-exports.changePassword = async (req, res, next) => {
-  const isDevelopment = process.env.NODE_ENV !== 'production';
-  try {
-    const { account_id } = req.user;
-    const { currentPassword, newPassword } = req.body;
+// exports.changePassword = async (req, res, next) => {
+//   const isDevelopment = process.env.NODE_ENV !== 'production';
+//   try {
+//     const { account_id } = req.user;
+//     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Current password and new password are required' });
-    }
-    if (newPassword.length < 8) {
-      return res.status(400).json({ error: 'New password must be at least 8 characters long' });
-    }
+//     if (!currentPassword || !newPassword) {
+//       return res.status(400).json({ error: 'Current password and new password are required' });
+//     }
+//     if (newPassword.length < 8) {
+//       return res.status(400).json({ error: 'New password must be at least 8 characters long' });
+//     }
 
-    const authAccount = await models.auth_accounts.findByPk(account_id);
-    if (!authAccount) {
-      return res.status(404).json({ error: 'Account not found' });
-    }
+//     const authAccount = await models.auth_accounts.findByPk(account_id);
+//     if (!authAccount) {
+//       return res.status(404).json({ error: 'Account not found' });
+//     }
 
-    const isMatch = await bcrypt.compare(currentPassword, authAccount.password_hash);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Current password is incorrect' });
-    }
+//     const isMatch = await bcrypt.compare(currentPassword, authAccount.password_hash);
+//     if (!isMatch) {
+//       return res.status(401).json({ error: 'Current password is incorrect' });
+//     }
 
-    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-    await authAccount.update({ password_hash: hashedNewPassword });
+//     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+//     await authAccount.update({ password_hash: hashedNewPassword });
 
-    await logAuditEvent(account_id, 'change_password', { ip: req.ip });
+//     await logAuditEvent(account_id, 'change_password', { ip: req.ip });
 
-    if (isDevelopment) console.log('✅ Password changed for account:', authAccount.email);
+//     if (isDevelopment) console.log('✅ Password changed for account:', authAccount.email);
 
-    res.json({ message: 'Password changed successfully' });
-  } catch (err) {
-    console.error('Change password error:', err);
-    res.status(500).json({
-      error: 'Failed to change password',
-      ...(isDevelopment && { details: err.message }),
-    });
-  }
-};
+//     res.json({ message: 'Password changed successfully' });
+//   } catch (err) {
+//     console.error('Change password error:', err);
+//     res.status(500).json({
+//       error: 'Failed to change password',
+//       ...(isDevelopment && { details: err.message }),
+//     });
+//   }
+// };
 
 // -------------------------
 // FORGOT PASSWORD
@@ -1454,13 +1454,175 @@ exports.verifyOTP = async (req, res, next) => {
 };
 
 // -------------------------
-// REGISTER WITH PHONE (Complete Registration After OTP)
+// // REGISTER WITH PHONE (Complete Registration After OTP)
+// // -------------------------
+// exports.registerWithPhone = async (req, res, next) => {
+//   const isDevelopment = process.env.NODE_ENV !== 'production';
+//   const t = await sequelize.transaction();
+//   try {
+//     const { phone, firstName, lastName, email } = req.body;
+
+//     if (isDevelopment) {
+//       console.log('📝 Phone registration attempt:', {
+//         phone,
+//         firstName,
+//         lastName,
+//         email,
+//       });
+//     }
+
+//     // Validation
+//     if (!phone || !firstName || !lastName) {
+//       await t.rollback();
+//       return res.status(400).json({ 
+//         error: 'Phone number, first name, and last name are required' 
+//       });
+//     }
+
+//     if (!phone.match(/^\+\d{10,15}$/)) {
+//       await t.rollback();
+//       return res.status(400).json({ 
+//         error: 'Invalid phone number format' 
+//       });
+//     }
+
+//     if (email && !validator.isEmail(email)) {
+//       await t.rollback();
+//       return res.status(400).json({ error: 'Invalid email format' });
+//     }
+
+//     // Check if phone already registered
+//     const existingAuth = await models.auth_accounts.findOne({
+//       where: { phone_number: phone },
+//     });
+
+//     if (existingAuth) {
+//       await t.rollback();
+//       if (isDevelopment) {
+//         console.log('❌ Phone already registered:', phone);
+//       }
+//       return res.status(409).json({ error: 'Phone number already registered' });
+//     }
+
+//     // Check if email already registered (if provided)
+//     if (email) {
+//       const existingEmail = await models.auth_accounts.findOne({
+//         where: { email: email.trim().toLowerCase() },
+//       });
+
+//       if (existingEmail) {
+//         await t.rollback();
+//         return res.status(409).json({ error: 'Email already registered' });
+//       }
+//     }
+
+//     if (isDevelopment) {
+//       console.log('✅ Creating new phone-based user account');
+//     }
+
+//     // ✅ FIXED: Generate dummy password hash for phone-only accounts
+//     const dummyPassword = crypto.randomBytes(32).toString('hex');
+//     const passwordHash = await bcrypt.hash(dummyPassword, 10);
+
+//     // Create auth account
+//     const authAccount = await models.auth_accounts.create(
+//       {
+//         role: 'user',
+//         email: email ? email.trim().toLowerCase() : null,
+//         phone_number: phone,
+//         password_hash: passwordHash, // ✅ Use dummy hash
+//         is_active: true,
+//         phone_verified: true,
+//       },
+//       { transaction: t }
+//     );
+
+//     if (isDevelopment) {
+//       console.log('✅ Auth account created:', {
+//         account_id: authAccount.account_id,
+//         phone: authAccount.phone_number,
+//       });
+//     }
+
+//     // Generate referral code
+//     const referralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+
+//     // Create user profile
+//     const user = await models.users.create(
+//       {
+//         user_id: authAccount.account_id,
+//         account_id: authAccount.account_id,
+//         first_name: firstName.trim().substring(0, 100),
+//         last_name: lastName.trim().substring(0, 100),
+//         phone_number: phone,
+//         referral_code: referralCode,
+//         status: 'active',
+//       },
+//       { transaction: t }
+//     );
+
+//     if (isDevelopment) {
+//       console.log('✅ User profile created:', {
+//         user_id: user.user_id,
+//         first_name: user.first_name,
+//         last_name: user.last_name,
+//       });
+//     }
+
+//     await t.commit();
+
+//     // Generate token
+//     const token = signToken(authAccount, { user_id: user.user_id });
+
+//     // Log audit event
+//     await logAuditEvent(authAccount.account_id, 'register_with_phone', { 
+//       phone, 
+//       ip: req.ip 
+//     });
+
+//     if (isDevelopment) {
+//       console.log('✅ User registered successfully via phone:', phone);
+//     }
+
+//     res.status(201).json({
+//       message: 'Registration successful',
+//       token,
+//       role: 'user',
+//       user: {
+//         user_id: user.user_id,
+//         first_name: user.first_name,
+//         last_name: user.last_name,
+//         phone_number: user.phone_number,
+//         email: email || null,
+//         referral_code: user.referral_code,
+//       },
+//     });
+//   } catch (err) {
+//     await t.rollback();
+//     console.error('❌ Phone registration error:', err);
+    
+//     if (err.name === 'SequelizeUniqueConstraintError') {
+//       return res.status(409).json({
+//         error: 'Phone number or email already registered',
+//         ...(isDevelopment && { details: err.errors?.map(e => e.message) }),
+//       });
+//     }
+
+//     res.status(500).json({
+//       error: 'Registration failed',
+//       ...(isDevelopment && { details: err.message, stack: err.stack }),
+//     });
+//   }
+// };
+
+// -------------------------
+// REGISTER WITH PHONE (With Optional Password)
 // -------------------------
 exports.registerWithPhone = async (req, res, next) => {
   const isDevelopment = process.env.NODE_ENV !== 'production';
   const t = await sequelize.transaction();
   try {
-    const { phone, firstName, lastName, email } = req.body;
+    const { phone, firstName, lastName, email, password } = req.body;
 
     if (isDevelopment) {
       console.log('📝 Phone registration attempt:', {
@@ -1468,6 +1630,7 @@ exports.registerWithPhone = async (req, res, next) => {
         firstName,
         lastName,
         email,
+        hasPassword: !!password,
       });
     }
 
@@ -1482,13 +1645,30 @@ exports.registerWithPhone = async (req, res, next) => {
     if (!phone.match(/^\+\d{10,15}$/)) {
       await t.rollback();
       return res.status(400).json({ 
-        error: 'Invalid phone number format' 
+        error: 'Invalid phone number format. Use E.164 format (e.g., +254712345678)' 
       });
     }
 
     if (email && !validator.isEmail(email)) {
       await t.rollback();
       return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Validate password if provided
+    if (password) {
+      if (password.length < 8) {
+        await t.rollback();
+        return res.status(400).json({ 
+          error: 'Password must be at least 8 characters long' 
+        });
+      }
+      // Strong password validation
+      if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
+        await t.rollback();
+        return res.status(400).json({ 
+          error: 'Password must contain uppercase, lowercase, and number' 
+        });
+      }
     }
 
     // Check if phone already registered
@@ -1498,9 +1678,7 @@ exports.registerWithPhone = async (req, res, next) => {
 
     if (existingAuth) {
       await t.rollback();
-      if (isDevelopment) {
-        console.log('❌ Phone already registered:', phone);
-      }
+      if (isDevelopment) console.log('❌ Phone already registered:', phone);
       return res.status(409).json({ error: 'Phone number already registered' });
     }
 
@@ -1516,13 +1694,18 @@ exports.registerWithPhone = async (req, res, next) => {
       }
     }
 
-    if (isDevelopment) {
-      console.log('✅ Creating new phone-based user account');
-    }
+    if (isDevelopment) console.log('✅ Creating new phone-based user account');
 
-    // ✅ FIXED: Generate dummy password hash for phone-only accounts
-    const dummyPassword = crypto.randomBytes(32).toString('hex');
-    const passwordHash = await bcrypt.hash(dummyPassword, 10);
+    // Hash password (user-provided or dummy)
+    let passwordHash;
+    if (password && password.trim()) {
+      passwordHash = await bcrypt.hash(password, 10);
+      if (isDevelopment) console.log('🔐 Using user-provided password');
+    } else {
+      const dummyPassword = crypto.randomBytes(32).toString('hex');
+      passwordHash = await bcrypt.hash(dummyPassword, 10);
+      if (isDevelopment) console.log('🔐 Generated dummy password (can be set later)');
+    }
 
     // Create auth account
     const authAccount = await models.auth_accounts.create(
@@ -1530,9 +1713,10 @@ exports.registerWithPhone = async (req, res, next) => {
         role: 'user',
         email: email ? email.trim().toLowerCase() : null,
         phone_number: phone,
-        password_hash: passwordHash, // ✅ Use dummy hash
+        password_hash: passwordHash,
         is_active: true,
         phone_verified: true,
+        password_set: !!password, // Track if password was set
       },
       { transaction: t }
     );
@@ -1541,6 +1725,7 @@ exports.registerWithPhone = async (req, res, next) => {
       console.log('✅ Auth account created:', {
         account_id: authAccount.account_id,
         phone: authAccount.phone_number,
+        password_set: authAccount.password_set,
       });
     }
 
@@ -1574,20 +1759,19 @@ exports.registerWithPhone = async (req, res, next) => {
     // Generate token
     const token = signToken(authAccount, { user_id: user.user_id });
 
-    // Log audit event
     await logAuditEvent(authAccount.account_id, 'register_with_phone', { 
       phone, 
+      password_set: !!password,
       ip: req.ip 
     });
 
-    if (isDevelopment) {
-      console.log('✅ User registered successfully via phone:', phone);
-    }
+    if (isDevelopment) console.log('✅ User registered successfully via phone:', phone);
 
     res.status(201).json({
       message: 'Registration successful',
       token,
       role: 'user',
+      password_set: !!password, // Tell frontend if password was set
       user: {
         user_id: user.user_id,
         first_name: user.first_name,
@@ -1611,6 +1795,123 @@ exports.registerWithPhone = async (req, res, next) => {
     res.status(500).json({
       error: 'Registration failed',
       ...(isDevelopment && { details: err.message, stack: err.stack }),
+    });
+  }
+};
+
+// -------------------------
+// UNIFIED CHANGE PASSWORD (Handles both set and update)
+// -------------------------
+exports.changePassword = async (req, res, next) => {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  try {
+    const { account_id } = req.user;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword) {
+      return res.status(400).json({ error: 'New password is required' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ 
+        error: 'New password must be at least 8 characters long' 
+      });
+    }
+
+    // Strong password validation
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      return res.status(400).json({ 
+        error: 'Password must contain uppercase, lowercase, and number' 
+      });
+    }
+
+    const authAccount = await models.auth_accounts.findByPk(account_id);
+    if (!authAccount) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    // Check if user has set their password before
+    const hasSetPassword = authAccount.password_set === true;
+
+    if (hasSetPassword) {
+      // User has password - require current password
+      if (!currentPassword) {
+        return res.status(400).json({ 
+          error: 'Current password is required to change password' 
+        });
+      }
+
+      const isMatch = await bcrypt.compare(currentPassword, authAccount.password_hash);
+      if (!isMatch) {
+        return res.status(401).json({ error: 'Current password is incorrect' });
+      }
+
+      if (isDevelopment) console.log('🔐 Updating existing password');
+    } else {
+      // First time setting password - no current password needed
+      if (isDevelopment) console.log('🔐 Setting password for the first time');
+    }
+
+    // Hash and save new password
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    await authAccount.update({ 
+      password_hash: hashedNewPassword,
+      password_set: true, // Mark password as set
+    });
+
+    await logAuditEvent(
+      account_id, 
+      hasSetPassword ? 'change_password' : 'set_initial_password', 
+      { ip: req.ip }
+    );
+
+    const message = hasSetPassword 
+      ? 'Password changed successfully' 
+      : 'Password set successfully. You can now login with your phone/email and password.';
+
+    if (isDevelopment) console.log('✅ Password operation successful');
+
+    res.json({ 
+      message,
+      password_set: true // Confirm password is now set
+    });
+  } catch (err) {
+    console.error('Change password error:', err);
+    res.status(500).json({
+      error: 'Failed to change password',
+      ...(isDevelopment && { details: err.message }),
+    });
+  }
+};
+
+// -------------------------
+// CHECK PASSWORD STATUS
+// -------------------------
+exports.checkPasswordStatus = async (req, res, next) => {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  try {
+    const { account_id } = req.user;
+
+    const authAccount = await models.auth_accounts.findByPk(account_id, {
+      attributes: ['account_id', 'phone_verified', 'password_set', 'email', 'phone_number']
+    });
+
+    if (!authAccount) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    const hasSetPassword = authAccount.password_set === true;
+    const isPhoneUser = authAccount.phone_verified && !authAccount.email;
+
+    res.json({
+      hasSetPassword,
+      isPhoneUser,
+      requiresPasswordSetup: !hasSetPassword,
+    });
+  } catch (err) {
+    console.error('Check password status error:', err);
+    res.status(500).json({
+      error: 'Failed to check password status',
+      ...(isDevelopment && { details: err.message }),
     });
   }
 };
