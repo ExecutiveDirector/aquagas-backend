@@ -1275,3 +1275,341 @@ exports.sendPhoneVerification = async (req, res, next) => {
     });
   }
 };
+
+// Add these methods to your authController.js
+
+// -------------------------
+// SEND OTP (Phone Authentication)
+// -------------------------
+exports.sendOTP = async (req, res, next) => {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  try {
+    const { phone } = req.body;
+
+    if (isDevelopment) {
+      console.log('📱 OTP request for phone:', phone);
+    }
+
+    // Validation
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
+
+    // Validate E.164 format (+254712345678)
+    if (!phone.match(/^\+\d{10,15}$/)) {
+      return res.status(400).json({ 
+        error: 'Invalid phone number format. Use E.164 format (e.g., +254712345678)' 
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    if (isDevelopment) {
+      console.log('🔑 Generated OTP:', otp);
+      console.log('⏰ Expires at:', expiresAt);
+    }
+
+    // Store OTP in Redis with 10-minute expiration
+    const otpKey = `otp:${phone}`;
+    await redisClient.setEx(otpKey, 600, otp); // 600 seconds = 10 minutes
+
+    // Rate limiting: Track OTP requests
+    const rateLimitKey = `otp_limit:${phone}`;
+    const requestCount = await redisClient.get(rateLimitKey);
+    
+    if (requestCount && parseInt(requestCount) >= 5) {
+      return res.status(429).json({ 
+        error: 'Too many OTP requests. Please try again later.' 
+      });
+    }
+    
+    await redisClient.setEx(rateLimitKey, 3600, (parseInt(requestCount) || 0) + 1); // 1 hour
+
+    // TODO: Integrate with SMS service (Twilio, Africa's Talking, etc.)
+    if (isDevelopment) {
+      console.log('✅ OTP stored in Redis (dev mode - not sending SMS)');
+      console.log('🔢 OTP Code:', otp);
+    } else {
+      // In production, send actual SMS
+      // await sendSMS(phone, `Your AquaGas verification code is: ${otp}`);
+      console.log('📤 SMS would be sent in production');
+    }
+
+    res.json({ 
+      message: 'OTP sent successfully',
+      ...(isDevelopment && { debug: { otp, expiresAt } }) // Only in dev
+    });
+  } catch (err) {
+    console.error('❌ Send OTP error:', err);
+    res.status(500).json({
+      error: 'Failed to send OTP',
+      ...(isDevelopment && { details: err.message }),
+    });
+  }
+};
+
+// -------------------------
+// VERIFY OTP (Phone Authentication)
+// -------------------------
+exports.verifyOTP = async (req, res, next) => {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  try {
+    const { phone, otp } = req.body;
+
+    if (isDevelopment) {
+      console.log('🔐 Verifying OTP:', { phone, otp });
+    }
+
+    // Validation
+    if (!phone || !otp) {
+      return res.status(400).json({ error: 'Phone number and OTP are required' });
+    }
+
+    if (!otp.match(/^\d{6}$/)) {
+      return res.status(400).json({ error: 'Invalid OTP format. Must be 6 digits' });
+    }
+
+    // Get OTP from Redis
+    const otpKey = `otp:${phone}`;
+    const storedOTP = await redisClient.get(otpKey);
+
+    if (isDevelopment) {
+      console.log('💾 Stored OTP:', storedOTP);
+      console.log('📥 Received OTP:', otp);
+    }
+
+    if (!storedOTP) {
+      return res.status(400).json({ 
+        error: 'OTP expired or not found. Please request a new code.' 
+      });
+    }
+
+    if (storedOTP !== otp) {
+      if (isDevelopment) {
+        console.log('❌ OTP mismatch');
+      }
+      return res.status(401).json({ error: 'Invalid OTP code' });
+    }
+
+    // OTP is valid - delete it
+    await redisClient.del(otpKey);
+
+    // Check if user already exists
+    const existingAuth = await models.auth_accounts.findOne({
+      where: { phone_number: phone },
+    });
+
+    if (existingAuth) {
+      // Existing user - log them in
+      const token = signToken(existingAuth, {
+        user_id: existingAuth.account_id,
+      });
+
+      // Get user data
+      const user = await models.users.findOne({
+        where: { account_id: existingAuth.account_id },
+      });
+
+      await logAuditEvent(existingAuth.account_id, 'login_with_phone', { 
+        phone, 
+        ip: req.ip 
+      });
+
+      if (isDevelopment) {
+        console.log('✅ Existing user logged in:', phone);
+      }
+
+      return res.json({
+        message: 'Login successful',
+        verified: true,
+        token,
+        user: user ? {
+          user_id: user.user_id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          phone_number: user.phone_number,
+        } : null,
+      });
+    }
+
+    // New user - return verified status (they need to complete registration)
+    if (isDevelopment) {
+      console.log('✅ New user - OTP verified, awaiting registration');
+    }
+
+    res.json({
+      message: 'OTP verified successfully',
+      verified: true,
+      isNewUser: true,
+    });
+  } catch (err) {
+    console.error('❌ Verify OTP error:', err);
+    res.status(500).json({
+      error: 'Failed to verify OTP',
+      ...(isDevelopment && { details: err.message }),
+    });
+  }
+};
+
+// -------------------------
+// REGISTER WITH PHONE (Complete Registration After OTP)
+// -------------------------
+exports.registerWithPhone = async (req, res, next) => {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  const t = await sequelize.transaction();
+  try {
+    const { phone, firstName, lastName, email } = req.body;
+
+    if (isDevelopment) {
+      console.log('📝 Phone registration attempt:', {
+        phone,
+        firstName,
+        lastName,
+        email,
+      });
+    }
+
+    // Validation
+    if (!phone || !firstName || !lastName) {
+      await t.rollback();
+      return res.status(400).json({ 
+        error: 'Phone number, first name, and last name are required' 
+      });
+    }
+
+    // Validate phone format
+    if (!phone.match(/^\+\d{10,15}$/)) {
+      await t.rollback();
+      return res.status(400).json({ 
+        error: 'Invalid phone number format' 
+      });
+    }
+
+    // Validate email if provided
+    if (email && !validator.isEmail(email)) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Check if phone already registered
+    const existingAuth = await models.auth_accounts.findOne({
+      where: { phone_number: phone },
+    });
+
+    if (existingAuth) {
+      await t.rollback();
+      if (isDevelopment) {
+        console.log('❌ Phone already registered:', phone);
+      }
+      return res.status(409).json({ error: 'Phone number already registered' });
+    }
+
+    // Check if email already registered (if provided)
+    if (email) {
+      const existingEmail = await models.auth_accounts.findOne({
+        where: { email: email.trim().toLowerCase() },
+      });
+
+      if (existingEmail) {
+        await t.rollback();
+        return res.status(409).json({ error: 'Email already registered' });
+      }
+    }
+
+    if (isDevelopment) {
+      console.log('✅ Creating new phone-based user account');
+    }
+
+    // Create auth account (no password for phone-only auth)
+    const authAccount = await models.auth_accounts.create(
+      {
+        role: 'user',
+        email: email ? email.trim().toLowerCase() : null,
+        phone_number: phone,
+        password_hash: null, // Phone-based auth doesn't require password
+        is_active: true,
+        phone_verified: true, // Already verified via OTP
+      },
+      { transaction: t }
+    );
+
+    if (isDevelopment) {
+      console.log('✅ Auth account created:', {
+        account_id: authAccount.account_id,
+        phone: authAccount.phone_number,
+      });
+    }
+
+    // Generate referral code
+    const referralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+
+    // Create user profile
+    const user = await models.users.create(
+      {
+        user_id: authAccount.account_id,
+        account_id: authAccount.account_id,
+        first_name: firstName.trim().substring(0, 100),
+        last_name: lastName.trim().substring(0, 100),
+        phone_number: phone,
+        referral_code: referralCode,
+        status: 'active',
+      },
+      { transaction: t }
+    );
+
+    if (isDevelopment) {
+      console.log('✅ User profile created:', {
+        user_id: user.user_id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+      });
+    }
+
+    await t.commit();
+
+    // Generate token
+    const token = signToken(authAccount, { user_id: user.user_id });
+
+    // Log audit event
+    await logAuditEvent(authAccount.account_id, 'register_with_phone', { 
+      phone, 
+      ip: req.ip 
+    });
+
+    if (isDevelopment) {
+      console.log('✅ User registered successfully via phone:', phone);
+    }
+
+    res.status(201).json({
+      message: 'Registration successful',
+      token,
+      role: 'user',
+      user: {
+        user_id: user.user_id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        phone_number: user.phone_number,
+        email: email || null,
+        referral_code: user.referral_code,
+      },
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error('❌ Phone registration error:', err);
+    
+    // Handle specific errors
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({
+        error: 'Phone number or email already registered',
+        ...(isDevelopment && { details: err.errors?.map(e => e.message) }),
+      });
+    }
+
+    res.status(500).json({
+      error: 'Registration failed',
+      ...(isDevelopment && { details: err.message, stack: err.stack }),
+    });
+  }
+};
