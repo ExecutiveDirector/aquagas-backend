@@ -586,24 +586,6 @@ exports.updateVendorStatus = async (req, res, next) => {
 
 // -------------------- Product Management --------------------
 
-exports.createProduct = async (req, res, next) => {
-  try {
-    const { name, description, price, vendor_id } = req.body;
-    if (!name || !price || !vendor_id) {
-      return res.status(400).json({ error: 'Missing required fields: name, price, vendor_id' });
-    }
-    const product = await models.products.create({
-      name,
-      description,
-      price,
-      vendor_id
-    });
-    res.status(201).json({ message: 'Product created', data: product });
-  } catch (err) {
-    console.error('Error creating product:', err);
-    next(err);
-  }
-};
 
 exports.getProducts = async (req, res, next) => {
   try {
@@ -662,92 +644,148 @@ exports.getProducts = async (req, res, next) => {
   }
 };
 
+// REPLACE your createProduct function with this:
+exports.createProduct = async (req, res, next) => {
+  try {
+    const {
+      category_id,
+      product_name,
+      product_code,
+      brand,
+      description,
+      size_specification,
+      unit_of_measure = 'pieces',
+      base_price,
+      min_price,
+      max_price,
+      weight_kg,
+      product_images,
+      is_active = true,
+      is_featured = false
+    } = req.body;
+
+    // Validate required fields
+    if (!product_name || !product_code || !category_id || !base_price) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Missing required fields: product_name, product_code, category_id, base_price' 
+      });
+    }
+
+    // Check if product code already exists
+    const existingProduct = await models.products.findOne({
+      where: { product_code }
+    });
+
+    if (existingProduct) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Product code already exists' 
+      });
+    }
+
+    // Create product
+    const product = await models.products.create({
+      category_id,
+      product_name,
+      product_code,
+      brand,
+      description,
+      size_specification,
+      unit_of_measure,
+      base_price,
+      min_price,
+      max_price,
+      weight_kg,
+      product_images,
+      is_active: is_active ? 1 : 0,
+      is_featured: is_featured ? 1 : 0
+    });
+
+    console.log('📦 Product created:', product.product_id);
+
+    res.status(201).json({
+      success: true,
+      data: product,
+      message: 'Product created successfully'
+    });
+  } catch (err) {
+    console.error('❌ Create product error:', err);
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({
+        success: false,
+        error: 'Product code already exists',
+        fields: err.errors.map((e) => e.path)
+      });
+    }
+    next(err);
+  }
+};
+
 exports.updateProduct = async (req, res, next) => {
   try {
-    const product = await models.products.findByPk(req.params.productId);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+    const { productId } = req.params;
+    const updates = req.body;
 
-    const { name, description, price } = req.body;
-    await product.update({ name, description, price });
-    res.json({ message: 'Product updated', data: product });
+    const product = await models.products.findByPk(productId);
+    
+    if (!product) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Product not found' 
+      });
+    }
+
+    // Convert boolean fields
+    if (updates.is_active !== undefined) {
+      updates.is_active = updates.is_active ? 1 : 0;
+    }
+    if (updates.is_featured !== undefined) {
+      updates.is_featured = updates.is_featured ? 1 : 0;
+    }
+
+    await product.update(updates);
+
+    console.log('📦 Product updated:', productId);
+
+    res.json({
+      success: true,
+      data: product,
+      message: 'Product updated successfully'
+    });
   } catch (err) {
-    console.error('Error updating product:', err);
+    console.error('❌ Update product error:', err);
     next(err);
   }
 };
 
+// REPLACE your deleteProduct function with this:
 exports.deleteProduct = async (req, res, next) => {
   try {
-    const product = await models.products.findByPk(req.params.productId);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+    const { productId } = req.params;
+
+    const product = await models.products.findByPk(productId);
+    
+    if (!product) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Product not found' 
+      });
+    }
 
     await product.destroy();
-    res.json({ message: 'Product deleted' });
+
+    console.log('📦 Product deleted:', productId);
+
+    res.json({
+      success: true,
+      message: 'Product deleted successfully'
+    });
   } catch (err) {
-    console.error('Error deleting product:', err);
+    console.error('❌ Delete product error:', err);
     next(err);
   }
 };
-
-// // 🟢 Get all products
-// exports.getProducts = async (req, res, next) => {
-//   try {
-//     const { page = 1, limit = 100, search, category_id, is_active, is_featured } = req.query;
-    
-//     const where = {};
-    
-//     // Add filters
-//     if (search) {
-//       where[Op.or] = [
-//         { product_name: { [Op.like]: `%${search}%` } },
-//         { product_code: { [Op.like]: `%${search}%` } },
-//         { brand: { [Op.like]: `%${search}%` } }
-//       ];
-//     }
-    
-//     if (category_id) {
-//       where.category_id = category_id;
-//     }
-    
-//     if (is_active !== undefined) {
-//       where.is_active = is_active === 'true' || is_active === true ? 1 : 0;
-//     }
-    
-//     if (is_featured !== undefined) {
-//       where.is_featured = is_featured === 'true' || is_featured === true ? 1 : 0;
-//     }
-
-//     const products = await models.products.findAll({
-//       where,
-//       include: [
-//         {
-//           model: models.product_categories,
-//           as: 'category',
-//           attributes: ['category_id', 'category_name', 'description']
-//         }
-//       ],
-//       order: [
-//         ['is_featured', 'DESC'],
-//         ['created_at', 'DESC']
-//       ],
-//       limit: parseInt(limit),
-//       offset: (parseInt(page) - 1) * parseInt(limit)
-//     });
-
-//     console.log('📦 Admin fetched products:', products.length);
-
-//     // Return in the format your frontend expects
-//     res.json({
-//       success: true,
-//       products: products,
-//       count: products.length,
-//       message: 'Products fetched successfully'
-//     });
-//   } catch (err) {
-//     console.error('❌ Get products error:', err);
-//     next(err);
-//   }
-// };
 
 // 🟢 Get single product by ID
 exports.getProductById = async (req, res, next) => {
