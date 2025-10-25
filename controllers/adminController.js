@@ -689,6 +689,101 @@ exports.deleteProduct = async (req, res, next) => {
   }
 };
 
+// // 🟢 Get all products
+// exports.getProducts = async (req, res, next) => {
+//   try {
+//     const { page = 1, limit = 100, search, category_id, is_active, is_featured } = req.query;
+    
+//     const where = {};
+    
+//     // Add filters
+//     if (search) {
+//       where[Op.or] = [
+//         { product_name: { [Op.like]: `%${search}%` } },
+//         { product_code: { [Op.like]: `%${search}%` } },
+//         { brand: { [Op.like]: `%${search}%` } }
+//       ];
+//     }
+    
+//     if (category_id) {
+//       where.category_id = category_id;
+//     }
+    
+//     if (is_active !== undefined) {
+//       where.is_active = is_active === 'true' || is_active === true ? 1 : 0;
+//     }
+    
+//     if (is_featured !== undefined) {
+//       where.is_featured = is_featured === 'true' || is_featured === true ? 1 : 0;
+//     }
+
+//     const products = await models.products.findAll({
+//       where,
+//       include: [
+//         {
+//           model: models.product_categories,
+//           as: 'category',
+//           attributes: ['category_id', 'category_name', 'description']
+//         }
+//       ],
+//       order: [
+//         ['is_featured', 'DESC'],
+//         ['created_at', 'DESC']
+//       ],
+//       limit: parseInt(limit),
+//       offset: (parseInt(page) - 1) * parseInt(limit)
+//     });
+
+//     console.log('📦 Admin fetched products:', products.length);
+
+//     // Return in the format your frontend expects
+//     res.json({
+//       success: true,
+//       products: products,
+//       count: products.length,
+//       message: 'Products fetched successfully'
+//     });
+//   } catch (err) {
+//     console.error('❌ Get products error:', err);
+//     next(err);
+//   }
+// };
+
+// 🟢 Get single product by ID
+exports.getProductById = async (req, res, next) => {
+  try {
+    const { productId } = req.params;
+
+    const product = await models.products.findByPk(productId, {
+      include: [
+        {
+          model: models.product_categories,
+          as: 'category',
+          attributes: ['category_id', 'category_name', 'description']
+        }
+      ]
+    });
+
+    if (!product) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Product not found' 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: product,
+      message: 'Product fetched successfully'
+    });
+  } catch (err) {
+    console.error('❌ Get product by ID error:', err);
+    next(err);
+  }
+};
+
+// Keep your existing createProduct, updateProduct, deleteProduct functions below...
+
 // -------------------- System Settings --------------------
 exports.getSystemSettings = async (req, res, next) => {
   try {
