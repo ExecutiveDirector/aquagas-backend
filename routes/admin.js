@@ -37,6 +37,7 @@ router.put('/vendors/:vendorId/status', adminController.updateVendorStatus);
 router.post('/products', adminController.createProduct);
 router.put('/products/:productId', adminController.updateProduct);
 router.delete('/products/:productId', adminController.deleteProduct);
+router.get('/products', adminController.getProducts);
 
 router.get('/categories', adminController.getCategories);
 router.post('/categories', adminController.createCategory);

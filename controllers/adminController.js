@@ -585,6 +585,7 @@ exports.updateVendorStatus = async (req, res, next) => {
 };
 
 // -------------------- Product Management --------------------
+
 exports.createProduct = async (req, res, next) => {
   try {
     const { name, description, price, vendor_id } = req.body;
@@ -600,6 +601,63 @@ exports.createProduct = async (req, res, next) => {
     res.status(201).json({ message: 'Product created', data: product });
   } catch (err) {
     console.error('Error creating product:', err);
+    next(err);
+  }
+};
+
+exports.getProducts = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 100, search, category_id, is_active, is_featured } = req.query;
+    
+    const where = {};
+    
+    // Add filters
+    if (search) {
+      where[Op.or] = [
+        { product_name: { [Op.like]: `%${search}%` } },
+        { product_code: { [Op.like]: `%${search}%` } },
+        { brand: { [Op.like]: `%${search}%` } }
+      ];
+    }
+    
+    if (category_id) {
+      where.category_id = category_id;
+    }
+    
+    if (is_active !== undefined) {
+      where.is_active = is_active === 'true' || is_active === true ? 1 : 0;
+    }
+    
+    if (is_featured !== undefined) {
+      where.is_featured = is_featured === 'true' || is_featured === true ? 1 : 0;
+    }
+
+    const products = await models.products.findAll({
+      where,
+      include: [
+        {
+          model: models.product_categories,
+          as: 'category',
+          attributes: ['category_id', 'category_name', 'description']
+        }
+      ],
+      order: [
+        ['is_featured', 'DESC'],
+        ['created_at', 'DESC']
+      ],
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit)
+    });
+
+    console.log('📦 Admin fetched products:', products.length);
+
+    res.json({
+      success: true,
+      products: products,
+      message: 'Products fetched successfully'
+    });
+  } catch (err) {
+    console.error('❌ Get products error:', err);
     next(err);
   }
 };
