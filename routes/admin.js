@@ -34,11 +34,11 @@ router.put('/vendors/:vendorId/approve', adminController.approveVendor);  // Fix
 router.put('/vendors/:vendorId/status', adminController.updateVendorStatus);
 
 // Product management
+router.get('/products', adminController.getProducts);
+router.get('/products/:productId', adminController.getProductById);
 router.post('/products', adminController.createProduct);
 router.put('/products/:productId', adminController.updateProduct);
 router.delete('/products/:productId', adminController.deleteProduct);
-router.get('/products', adminController.getProducts);
-router.get('/products/:productId', adminController.getProductById);
 
 router.get('/categories', adminController.getCategories);
 router.post('/categories', adminController.createCategory);
