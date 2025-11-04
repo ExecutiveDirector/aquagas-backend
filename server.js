@@ -5,6 +5,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const geocodingRoutes = require('./routes/geocoding');
+const multiLayerCache = require('./services/multiLayerCache');
 
 // Import database connection and models
 const sequelize = require('./config/db');
@@ -20,7 +22,18 @@ const app = express();
 // Initialize models
 const models = initModels(sequelize);
 app.locals.models = models;
+// Initialize cache
+multiLayerCache.initialize().then(() => {
+  console.log('✅ Cache services initialized');
+});
+// Routes
+app.use('/api/geocode', geocodingRoutes);
 
+// Cleanup job (run daily)
+setInterval(async () => {
+  console.log('🧹 Running cache cleanup...');
+  await multiLayerCache.cleanup();
+}, 24 * 60 * 60 * 1000); // Every 24 hours
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -91,7 +104,6 @@ app.use(compression());
 
 // API routes
 app.use('/api', routes);
-
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({

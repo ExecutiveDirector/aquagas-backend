@@ -576,4 +576,358 @@ exports.updateOutlet = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /vendor/products
+ * Get all products for the authenticated vendor
+ */
+exports.getVendorProducts = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, search = '', category_id } = req.query;
+    const offset = (page - 1) * limit;
+    const vendorId = req.vendor.vendor_id;
+    
+    let whereClause = 'WHERE vo.vendor_id = ?';
+    const replacements = [vendorId];
+    
+    // Add search filter
+    if (search) {
+      whereClause += ' AND (p.product_name LIKE ? OR p.product_code LIKE ? OR p.brand LIKE ?)';
+      const searchTerm = `%${search}%`;
+      replacements.push(searchTerm, searchTerm, searchTerm);
+    }
+    
+    // Add category filter
+    if (category_id) {
+      whereClause += ' AND p.category_id = ?';
+      replacements.push(parseInt(category_id));
+    }
+    
+    const query = `
+      SELECT 
+        p.*,
+        vi.current_stock,
+        vi.selling_price,
+        vi.is_available,
+        vi.inventory_id,
+        vo.outlet_name,
+        vo.outlet_id,
+        c.category_name
+      FROM products p
+      INNER JOIN vendor_inventory vi ON p.product_id = vi.product_id
+      INNER JOIN vendor_outlets vo ON vi.outlet_id = vo.outlet_id
+      LEFT JOIN product_categories c ON p.category_id = c.category_id
+      ${whereClause}
+      ORDER BY p.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    
+    replacements.push(parseInt(limit), parseInt(offset));
+    
+    const [products] = await sequelize.query(query, {
+      replacements,
+      type: sequelize.QueryTypes.SELECT
+    });
+    
+    res.json(products || []);
+  } catch (err) {
+    console.error('Error fetching vendor products:', err);
+    next(err);
+  }
+};
+
+/**
+ * POST /vendor/products
+ * Create a new product
+ */
+exports.createProduct = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    const vendorId = req.vendor.vendor_id;
+    const {
+      product_name,
+      product_code,
+      category_id,
+      brand,
+      base_price,
+      min_price,
+      max_price,
+      stock_quantity,
+      size_specification,
+      unit_of_measure,
+      weight_kg,
+      carbon_footprint_kg,
+      description,
+      is_active,
+      is_featured,
+      product_images,
+      outlet_id, // Optional: specific outlet, otherwise use default
+    } = req.body;
+    
+    // Validate required fields
+    if (!product_name || !product_code || !category_id || !base_price || stock_quantity === undefined) {
+      await transaction.rollback();
+      return res.status(400).json({ 
+        error: 'Missing required fields: product_name, product_code, category_id, base_price, stock_quantity' 
+      });
+    }
+    
+    // Check if product_code already exists
+    const existingProduct = await models.products.findOne({
+      where: { product_code },
+      transaction
+    });
+    
+    if (existingProduct) {
+      await transaction.rollback();
+      return res.status(409).json({ 
+        error: 'Product code already exists. Please use a unique code.' 
+      });
+    }
+    
+    // Get next product_id
+    const [[{ nextProductId }]] = await sequelize.query(
+      'SELECT COALESCE(MAX(product_id), 0) + 1 as nextProductId FROM products',
+      { transaction }
+    );
+    
+    // Create product
+    const productData = {
+      product_id: nextProductId,
+      product_name,
+      product_code,
+      category_id: parseInt(category_id),
+      brand: brand || null,
+      base_price: parseFloat(base_price),
+      min_price: min_price ? parseFloat(min_price) : null,
+      max_price: max_price ? parseFloat(max_price) : null,
+      stock_quantity: parseInt(stock_quantity),
+      size_specification: size_specification || null,
+      unit_of_measure: unit_of_measure || 'kg',
+      weight_kg: weight_kg ? parseFloat(weight_kg) : null,
+      carbon_footprint_kg: carbon_footprint_kg ? parseFloat(carbon_footprint_kg) : null,
+      description: description || null,
+      is_active: is_active !== undefined ? is_active : true,
+      is_featured: is_featured !== undefined ? is_featured : false,
+      product_images: product_images || null,
+    };
+    
+    const product = await models.products.create(productData, { transaction });
+    
+    // Get vendor's outlet (use provided outlet_id or get first active outlet)
+    let targetOutletId = outlet_id;
+    
+    if (!targetOutletId) {
+      const defaultOutlet = await models.vendor_outlets.findOne({
+        where: { vendor_id: vendorId },
+        order: [['created_at', 'ASC']],
+        transaction
+      });
+      
+      if (!defaultOutlet) {
+        await transaction.rollback();
+        return res.status(400).json({ 
+          error: 'No outlet found. Please create an outlet first or specify outlet_id.' 
+        });
+      }
+      
+      targetOutletId = defaultOutlet.outlet_id;
+    } else {
+      // Verify outlet belongs to vendor
+      const outlet = await models.vendor_outlets.findOne({
+        where: { 
+          outlet_id: targetOutletId,
+          vendor_id: vendorId 
+        },
+        transaction
+      });
+      
+      if (!outlet) {
+        await transaction.rollback();
+        return res.status(403).json({ 
+          error: 'Invalid outlet_id or outlet does not belong to your business.' 
+        });
+      }
+    }
+    
+    // Get next inventory_id
+    const [[{ nextInventoryId }]] = await sequelize.query(
+      'SELECT COALESCE(MAX(inventory_id), 0) + 1 as nextInventoryId FROM vendor_inventory',
+      { transaction }
+    );
+    
+    // Create inventory entry
+    await models.vendor_inventory.create({
+      inventory_id: nextInventoryId,
+      outlet_id: targetOutletId,
+      product_id: product.product_id,
+      current_stock: parseInt(stock_quantity),
+      reserved_stock: 0,
+      minimum_stock_level: 5,
+      maximum_stock_level: 100,
+      reorder_point: 10,
+      cost_price: parseFloat(base_price) * 0.7, // Default: 70% of selling price
+      selling_price: parseFloat(base_price),
+      is_available: true,
+      last_restocked_at: new Date(),
+    }, { transaction });
+    
+    await transaction.commit();
+    
+    res.status(201).json({ 
+      message: 'Product created successfully', 
+      product 
+    });
+  } catch (err) {
+    await transaction.rollback();
+    console.error('Error creating product:', err);
+    
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ 
+        error: 'Product with this code already exists' 
+      });
+    }
+    
+    next(err);
+  }
+};
+
+/**
+ * DELETE /vendor/products/:productId
+ * Delete a product (soft delete by marking as inactive)
+ */
+exports.deleteProduct = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    const { productId } = req.params;
+    const vendorId = req.vendor.vendor_id;
+    
+    // Verify product belongs to vendor through inventory
+    const query = `
+      SELECT p.*, vi.inventory_id, vo.outlet_id
+      FROM products p
+      INNER JOIN vendor_inventory vi ON p.product_id = vi.product_id
+      INNER JOIN vendor_outlets vo ON vi.outlet_id = vo.outlet_id
+      WHERE p.product_id = ? AND vo.vendor_id = ?
+      LIMIT 1
+    `;
+    
+    const [[product]] = await sequelize.query(query, {
+      replacements: [productId, vendorId],
+      type: sequelize.QueryTypes.SELECT,
+      transaction
+    });
+    
+    if (!product) {
+      await transaction.rollback();
+      return res.status(404).json({ 
+        error: 'Product not found or does not belong to your business' 
+      });
+    }
+    
+    // Check if product has pending orders
+    const pendingOrdersQuery = `
+      SELECT COUNT(*) as count
+      FROM order_items oi
+      INNER JOIN orders o ON oi.order_id = o.order_id
+      WHERE oi.product_id = ? 
+        AND o.vendor_id = ?
+        AND o.status IN ('pending', 'confirmed', 'preparing', 'ready', 'dispatched')
+    `;
+    
+    const [[{ count }]] = await sequelize.query(pendingOrdersQuery, {
+      replacements: [productId, vendorId],
+      type: sequelize.QueryTypes.SELECT,
+      transaction
+    });
+    
+    if (count > 0) {
+      await transaction.rollback();
+      return res.status(400).json({ 
+        error: `Cannot delete product. It has ${count} pending order(s). Please complete or cancel those orders first.` 
+      });
+    }
+    
+    // Soft delete: Mark as inactive
+    await sequelize.query(
+      'UPDATE products SET is_active = 0, updated_at = NOW() WHERE product_id = ?',
+      {
+        replacements: [productId],
+        type: sequelize.QueryTypes.UPDATE,
+        transaction
+      }
+    );
+    
+    // Mark inventory as unavailable
+    await sequelize.query(
+      'UPDATE vendor_inventory SET is_available = 0 WHERE product_id = ?',
+      {
+        replacements: [productId],
+        type: sequelize.QueryTypes.UPDATE,
+        transaction
+      }
+    );
+    
+    await transaction.commit();
+    
+    res.json({ 
+      message: 'Product deleted successfully',
+      note: 'Product has been marked as inactive and is no longer visible to customers.'
+    });
+  } catch (err) {
+    await transaction.rollback();
+    console.error('Error deleting product:', err);
+    next(err);
+  }
+};
+
+/**
+ * GET /vendor/product_categories
+ * Get all product categories
+ */
+exports.getProductCategories = async (req, res, next) => {
+  try {
+    const categories = await models.product_categories.findAll({
+      where: { is_active: true },
+      order: [['category_name', 'ASC']],
+      attributes: ['category_id', 'category_name', 'description']
+    });
+    
+    res.json(categories);
+  } catch (err) {
+    console.error('Error fetching categories:', err);
+    next(err);
+  }
+};
+
+/**
+ * POST /vendor/upload-image
+ * Upload product images (placeholder - implement with actual file upload middleware)
+ */
+exports.uploadProductImage = async (req, res, next) => {
+  try {
+    // This is a placeholder. Implement with multer or similar
+    // Example with multer:
+    // const multer = require('multer');
+    // const upload = multer({ dest: 'uploads/' });
+    
+    if (!req.file && !req.files) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    // Process file upload (save to S3, Cloudinary, or local storage)
+    // Return the URL
+    const imageUrl = `/uploads/${req.file.filename}`; // Example
+    
+    res.json({ 
+      message: 'Image uploaded successfully',
+      url: imageUrl 
+    });
+  } catch (err) {
+    console.error('Error uploading image:', err);
+    next(err);
+  }
+};
+
 module.exports = exports;

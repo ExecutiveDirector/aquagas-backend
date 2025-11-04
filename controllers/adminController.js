@@ -820,8 +820,6 @@ exports.getProductById = async (req, res, next) => {
   }
 };
 
-// Keep your existing createProduct, updateProduct, deleteProduct functions below...
-
 // -------------------- System Settings --------------------
 exports.getSystemSettings = async (req, res, next) => {
   try {

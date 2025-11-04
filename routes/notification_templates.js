@@ -1,12 +1,21 @@
+// ============================================
+// routes/notificationTemplateRoutes.js (Enhanced)
+// ============================================
 const express = require('express');
 const router = express.Router();
 const notificationTemplateController = require('../controllers/notificationTemplateController');
-const { authenticateToken } = require('../middleware/authMiddleware'); // ✅ use correct middleware
+const { authenticateToken } = require('../middleware/authMiddleware');
 
-// Manage templates (admin only ideally)
-router.get('/', authenticateToken, notificationTemplateController.getTemplates);
-router.post('/', authenticateToken, notificationTemplateController.createTemplate);
-router.put('/:id', authenticateToken, notificationTemplateController.updateTemplate);
-router.delete('/:id', authenticateToken, notificationTemplateController.deleteTemplate);
+// All template routes require authentication (ideally admin only)
+router.use(authenticateToken);
+
+// Manage templates
+router.get('/', notificationTemplateController.getTemplates);
+router.post('/', notificationTemplateController.createTemplate);
+router.put('/:id', notificationTemplateController.updateTemplate);
+router.delete('/:id', notificationTemplateController.deleteTemplate);
+
+// Test template with variables
+// router.post('/:id/test', notificationTemplateController.testTemplate);
 
 module.exports = router;

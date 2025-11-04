@@ -367,13 +367,11 @@ exports.addProductReview = async (req, res, next) => {
   }
 };
 
-// Get products nearby with vendor info
-// controllers/productController.js
-// CORRECTED getNearbyProducts function
+//  getNearbyProducts - Groups outlets under vendors
 
 exports.getNearbyProducts = async (req, res, next) => {
   try {
-    const { lat, lng, radius = 50 } = req.query; // Changed default from 10 to 50
+    const { lat, lng, radius = 50 } = req.query;
 
     // Validate required parameters
     if (!lat || !lng) {
@@ -397,7 +395,6 @@ exports.getNearbyProducts = async (req, res, next) => {
 
     console.log(`🔍 Searching for products near (${userLat}, ${userLng}) within ${searchRadius}km`);
 
-    // FIXED: Use parameterized query correctly with sequelize.query
     const query = `
       SELECT 
         p.product_id,
@@ -415,11 +412,11 @@ exports.getNearbyProducts = async (req, res, next) => {
         vi.is_available,
         v.vendor_id,
         v.business_name as vendor_name,
-        v.rating,
+        v.rating as vendor_rating,
         vo.outlet_id,
         vo.outlet_name,
-        vo.latitude as vendor_latitude,
-        vo.longitude as vendor_longitude,
+        vo.latitude as outlet_latitude,
+        vo.longitude as outlet_longitude,
         vo.contact_phone,
         vo.address_line_1,
         vo.city,
@@ -445,16 +442,16 @@ exports.getNearbyProducts = async (req, res, next) => {
       ORDER BY distance_km ASC, v.rating DESC, p.is_featured DESC
     `;
 
-    // FIXED: Correct way to execute raw query with Sequelize
     const results = await sequelize.query(query, {
       replacements: [userLat, userLng, userLat, searchRadius],
-      type: sequelize.QueryTypes.SELECT // Changed from SELECT to QueryTypes.SELECT
+      type: sequelize.QueryTypes.SELECT
     });
 
-    console.log(`📦 Found ${results.length} product records`);
+    console.log(`📦 Raw query returned ${results.length} product records`);
 
     // Handle empty results
     if (!results || results.length === 0) {
+      console.log(`⚠️ No products found within ${searchRadius}km`);
       return res.status(200).json({
         success: true,
         message: `No products found within ${searchRadius} km`,
@@ -469,36 +466,45 @@ exports.getNearbyProducts = async (req, res, next) => {
       });
     }
 
-    // Group products by vendor (using vendor_id + outlet_id as unique key)
+    // ✅ NEW: Group by vendor_id first, then by outlet_id
     const vendorMap = new Map();
 
     results.forEach(row => {
-      // Create unique key for vendor outlet combination
-      const vendorKey = `${row.vendor_id}-${row.outlet_id}`;
-      
-      if (!vendorMap.has(vendorKey)) {
-        vendorMap.set(vendorKey, {
-          id: row.vendor_id.toString(),
-          vendor_id: row.vendor_id,
+      const vendorId = row.vendor_id;
+      const outletId = row.outlet_id;
+
+      // Create vendor entry if doesn't exist
+      if (!vendorMap.has(vendorId)) {
+        vendorMap.set(vendorId, {
+          vendor_id: vendorId,
           name: row.vendor_name,
-          outlet_id: row.outlet_id,
+          rating: parseFloat(row.vendor_rating) || 0,
+          outlets: new Map() // Store outlets as Map for easy lookup
+        });
+      }
+
+      const vendor = vendorMap.get(vendorId);
+
+      // Create outlet entry if doesn't exist
+      if (!vendor.outlets.has(outletId)) {
+        vendor.outlets.set(outletId, {
+          outlet_id: outletId,
           outlet_name: row.outlet_name,
-          rating: parseFloat(row.rating) || 0,
           location: {
-            latitude: parseFloat(row.vendor_latitude),
-            longitude: parseFloat(row.vendor_longitude)
+            latitude: parseFloat(row.outlet_latitude),
+            longitude: parseFloat(row.outlet_longitude)
           },
           address: row.address_line_1 || '',
           city: row.city || '',
           county: row.county || '',
           contact_phone: row.contact_phone || '',
-          distance_km: parseFloat(row.distance_km).toFixed(2),
+          distance_km: parseFloat(row.distance_km),
           products: []
         });
       }
 
-      // Add product to vendor's products array
-      vendorMap.get(vendorKey).products.push({
+      // Add product to outlet
+      vendor.outlets.get(outletId).products.push({
         id: row.product_id.toString(),
         product_id: row.product_id,
         title: row.product_name,
@@ -507,6 +513,7 @@ exports.getNearbyProducts = async (req, res, next) => {
         brand: row.brand || '',
         description: row.description || '',
         size_specification: row.size_specification || '',
+        sizeSpecification: row.size_specification || '',
         price: parseFloat(row.price || row.base_price),
         base_price: parseFloat(row.base_price),
         image: extractFirstImage(row.product_images),
@@ -515,28 +522,63 @@ exports.getNearbyProducts = async (req, res, next) => {
         isActive: Boolean(row.is_active),
         is_active: Boolean(row.is_active),
         is_featured: Boolean(row.is_featured),
-        rating: parseFloat(row.rating) || 0,
-        vendor_name: row.vendor_name,
-        vendor_latitude: parseFloat(row.vendor_latitude),
-        vendor_longitude: parseFloat(row.vendor_longitude),
-        outlet_id: row.outlet_id,
-        outlet_name: row.outlet_name
+        rating: parseFloat(row.vendor_rating) || 4.0 // Default rating
       });
     });
 
-    // Convert map to array and sort by distance
-    const vendors = Array.from(vendorMap.values())
-      .sort((a, b) => parseFloat(a.distance_km) - parseFloat(b.distance_km));
+    // ✅ Convert to final structure expected by Flutter app
+    const vendors = Array.from(vendorMap.values()).map(vendor => {
+      // Convert outlets Map to array
+      const outletsArray = Array.from(vendor.outlets.values());
+      
+      return {
+        vendor_id: vendor.vendor_id,
+        name: vendor.name,
+        rating: vendor.rating,
+        outlets: outletsArray
+      };
+    });
 
-    // Calculate total products across all vendors
-    const totalProducts = vendors.reduce((sum, vendor) => sum + vendor.products.length, 0);
+    // Calculate totals
+    let totalProducts = 0;
+    let totalOutlets = 0;
+    vendors.forEach(vendor => {
+      totalOutlets += vendor.outlets.length;
+      vendor.outlets.forEach(outlet => {
+        totalProducts += outlet.products.length;
+      });
+    });
 
-    console.log(`✅ Returning ${vendors.length} vendors with ${totalProducts} products`);
+    console.log('═══════════════════════════════════════════');
+    console.log('📊 BACKEND RESPONSE SUMMARY');
+    console.log('───────────────────────────────────────────');
+    console.log(`Vendors: ${vendors.length}`);
+    console.log(`Total Outlets: ${totalOutlets}`);
+    console.log(`Total Products: ${totalProducts}`);
+    console.log(`Search Radius: ${searchRadius}km`);
+    console.log('═══════════════════════════════════════════');
 
-    // Return successful response with metadata
+    // Log first vendor structure for verification
+    if (vendors.length > 0) {
+      console.log('\n📝 Sample Vendor Structure:');
+      console.log(JSON.stringify({
+        vendor_id: vendors[0].vendor_id,
+        name: vendors[0].name,
+        outlets_count: vendors[0].outlets.length,
+        first_outlet: vendors[0].outlets[0] ? {
+          outlet_id: vendors[0].outlets[0].outlet_id,
+          outlet_name: vendors[0].outlets[0].outlet_name,
+          products_count: vendors[0].outlets[0].products.length,
+          distance_km: vendors[0].outlets[0].distance_km
+        } : null
+      }, null, 2));
+    }
+
+    // Return response in format expected by Flutter app
     res.status(200).json({
       success: true,
       count: vendors.length,
+      total_outlets: totalOutlets,
       total_products: totalProducts,
       radius_km: searchRadius,
       user_location: {
@@ -548,8 +590,8 @@ exports.getNearbyProducts = async (req, res, next) => {
 
   } catch (err) {
     console.error('❌ Error fetching nearby products:', err);
+    console.error('Stack trace:', err.stack);
     
-    // Return structured error response
     res.status(500).json({
       success: false,
       error: 'Failed to fetch nearby products',
@@ -557,6 +599,52 @@ exports.getNearbyProducts = async (req, res, next) => {
     });
   }
 };
+
+// Helper function to extract first image from product_images JSON
+function extractFirstImage(productImages) {
+  const defaultImage = 'https://via.placeholder.com/400x400?text=Product';
+  
+  if (!productImages) {
+    return defaultImage;
+  }
+
+  try {
+    // If it's already a string URL
+    if (typeof productImages === 'string' && productImages.startsWith('http')) {
+      return productImages;
+    }
+
+    // If it's a JSON string, parse it
+    if (typeof productImages === 'string') {
+      const parsed = JSON.parse(productImages);
+      
+      // If array, return first element
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed[0];
+      }
+      
+      // If object with url property
+      if (parsed.url) {
+        return parsed.url;
+      }
+      
+      // If it's just a string after parsing
+      if (typeof parsed === 'string') {
+        return parsed;
+      }
+    }
+
+    // If it's already an array
+    if (Array.isArray(productImages) && productImages.length > 0) {
+      return productImages[0];
+    }
+
+    return defaultImage;
+  } catch (error) {
+    console.error('Error parsing product images:', error);
+    return defaultImage;
+  }
+}
 
 // Helper function to extract first image from product_images JSON
 function extractFirstImage(productImages) {
@@ -604,7 +692,6 @@ function extractFirstImage(productImages) {
     return defaultImage;
   }
 }
-
 
 
 // Helper function to extract first image from product_images JSON

@@ -1,25 +1,26 @@
-
-
 // -----------------------------------
-// routes/payments.js - Payment processing
+// routes/payments.js - Payment processing with Pesapal
 // -----------------------------------
 const express = require('express');
 const router = express.Router();
 const paymentController = require('../controllers/paymentController');
 const { authenticateToken } = require('../middleware/authMiddleware');
 
-// All payment routes require authentication
+// Public routes (no authentication required)
+router.get('/callback', paymentController.pesapalCallback);
+router.get('/ipn', paymentController.pesapalIPN);
+
+// All other payment routes require authentication
 router.use(authenticateToken);
 
-// Payment methods
+// Payment methods (cards, mobile money saved for future use)
 router.get('/methods', paymentController.getPaymentMethods);
 router.post('/methods', paymentController.addPaymentMethod);
 router.delete('/methods/:methodId', paymentController.removePaymentMethod);
 
-// Payment processing
-router.post('/process', paymentController.processPayment);
-router.post('/mpesa/stk-push', paymentController.initiateMpesaPayment);
-router.post('/mpesa/callback', paymentController.mpesaCallback);
+// Payment processing with Pesapal
+router.post('/initiate', paymentController.initiatePayment);
+router.post('/check-status', paymentController.checkPaymentStatus);
 
 // Transaction history
 router.get('/transactions', paymentController.getTransactions);
@@ -30,7 +31,9 @@ router.post('/refund', paymentController.requestRefund);
 router.get('/refunds', paymentController.getRefunds);
 
 // Wallet operations
+router.get('/wallet/balance', paymentController.getWalletBalance);
 router.post('/wallet/topup', paymentController.topupWallet);
 router.post('/wallet/withdraw', paymentController.withdrawFromWallet);
+router.get('/wallet/history', paymentController.getWalletHistory);
 
 module.exports = router;
