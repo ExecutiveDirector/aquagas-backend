@@ -915,68 +915,304 @@ exports.logout = async (req, res, next) => {
   }
 };
 
+// -------------------------
+// REGISTER WITH PHONE (With Optional Password) 
+// -------------------------
+exports.registerWithPhone = async (req, res, next) => {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  const t = await sequelize.transaction();
+  try {
+    const { phone, firstName, lastName, email, password } = req.body;
+
+    if (isDevelopment) {
+      console.log('📝 Phone registration attempt:', {
+        phone,
+        firstName,
+        lastName,
+        email,
+        hasPassword: !!password,
+      });
+    }
+
+    // Validation
+    if (!phone || !firstName || !lastName) {
+      await t.rollback();
+      return res.status(400).json({ 
+        error: 'Phone number, first name, and last name are required' 
+      });
+    }
+
+    if (!phone.match(/^\+\d{10,15}$/)) {
+      await t.rollback();
+      return res.status(400).json({ 
+        error: 'Invalid phone number format. Use E.164 format (e.g., +254712345678)' 
+      });
+    }
+
+    // Normalize email consistently
+    const cleanEmail = email ? email.trim().toLowerCase() : null;
+
+    if (cleanEmail && !validator.isEmail(cleanEmail)) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Validate password if provided
+    if (password) {
+      if (password.length < 8) {
+        await t.rollback();
+        return res.status(400).json({ 
+          error: 'Password must be at least 8 characters long' 
+        });
+      }
+      // Strong password validation
+      if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
+        await t.rollback();
+        return res.status(400).json({ 
+          error: 'Password must contain uppercase, lowercase, and number' 
+        });
+      }
+    }
+
+    // Check if phone already registered
+    const existingAuth = await models.auth_accounts.findOne({
+      where: { phone_number: phone },
+      transaction: t,
+    });
+
+    if (existingAuth) {
+      await t.rollback();
+      if (isDevelopment) console.log('❌ Phone already registered:', phone);
+      return res.status(409).json({ error: 'Phone number already registered' });
+    }
+
+    //  Check if email already registered (if provided)
+    if (cleanEmail) {
+      const existingEmail = await models.auth_accounts.findOne({
+        where: {
+          [models.Sequelize.Op.or]: [
+            { email: cleanEmail },
+            { email: validator.normalizeEmail(cleanEmail) }
+          ]
+        },
+        transaction: t,
+      });
+
+      if (existingEmail) {
+        await t.rollback();
+        return res.status(409).json({ error: 'Email already registered' });
+      }
+    }
+
+    if (isDevelopment) console.log('✅ Creating new phone-based user account');
+
+    // Hash password (user-provided or dummy)
+    let passwordHash;
+    let passwordWasSet = false;
+    
+    if (password && password.trim()) {
+      passwordHash = await bcrypt.hash(password, 10);
+      passwordWasSet = true;
+      if (isDevelopment) console.log('🔐 Using user-provided password');
+    } else {
+      const dummyPassword = crypto.randomBytes(32).toString('hex');
+      passwordHash = await bcrypt.hash(dummyPassword, 10);
+      if (isDevelopment) console.log('🔐 Generated dummy password (can be set later)');
+    }
+
+    // ✅ Determine if profile is complete
+    const profileCompleted = !!(cleanEmail && passwordWasSet);
+
+    // Create auth account
+    const authAccount = await models.auth_accounts.create(
+      {
+        role: 'user',
+        email: cleanEmail, // ✅ Use consistent format
+        phone_number: phone,
+        password_hash: passwordHash,
+        is_active: true,
+        phone_verified: true,
+        password_set: passwordWasSet, // ✅ Track if password was set
+        profile_completed: profileCompleted, // ✅ Track completion
+      },
+      { transaction: t }
+    );
+
+    if (isDevelopment) {
+      console.log('✅ Auth account created:', {
+        account_id: authAccount.account_id,
+        phone: authAccount.phone_number,
+        email: authAccount.email,
+        password_set: authAccount.password_set,
+        profile_completed: authAccount.profile_completed,
+      });
+    }
+
+    // Generate referral code
+    const referralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+
+    //  Store email in users table too
+    const user = await models.users.create(
+      {
+        user_id: authAccount.account_id,
+        account_id: authAccount.account_id,
+        first_name: firstName.trim().substring(0, 100),
+        last_name: lastName.trim().substring(0, 100),
+        email: cleanEmail, // ✅ Store email here too
+        phone_number: phone,
+        referral_code: referralCode,
+        status: 'active',
+        profile_completed: profileCompleted, // ✅ Track completion
+      },
+      { transaction: t }
+    );
+
+    if (isDevelopment) {
+      console.log('✅ User profile created:', {
+        user_id: user.user_id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email,
+        profile_completed: user.profile_completed,
+      });
+    }
+
+    await t.commit();
+
+    // Generate token
+    const token = signToken(authAccount, { user_id: user.user_id });
+
+    await logAuditEvent(authAccount.account_id, 'register_with_phone', { 
+      phone, 
+      email: cleanEmail,
+      password_set: passwordWasSet,
+      profile_completed: profileCompleted,
+      ip: req.ip 
+    });
+
+    if (isDevelopment) {
+      console.log('✅ User registered successfully via phone:', phone);
+      if (!profileCompleted) {
+        console.log('⚠️  Profile incomplete - user should add email/password');
+      }
+    }
+
+    res.status(201).json({
+      message: profileCompleted 
+        ? 'Registration successful' 
+        : 'Phone verified successfully. Please complete your profile.',
+      token,
+      role: 'user',
+      password_set: passwordWasSet,
+      profile_completed: profileCompleted, //  Frontend knows status
+      user: {
+        user_id: user.user_id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        phone_number: user.phone_number,
+        email: cleanEmail,
+        referral_code: user.referral_code,
+      },
+    });
+  } catch (err) {
+    await t.rollback();
+    console.error('❌ Phone registration error:', err);
+    
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({
+        error: 'Phone number or email already registered',
+        ...(isDevelopment && { details: err.errors?.map(e => e.message) }),
+      });
+    }
+
+    res.status(500).json({
+      error: 'Registration failed',
+      ...(isDevelopment && { details: err.message, stack: err.stack }),
+    });
+  }
+};
 
 // -------------------------
-// GET CURRENT USER PROFILE - FIXED VERSION
+// GET CURRENT USER PROFILE 
 // -------------------------
 exports.getProfile = async (req, res, next) => {
   const isDevelopment = process.env.NODE_ENV !== 'production';
   try {
     const { account_id, role } = req.user;
 
+    if (isDevelopment) {
+      console.log('📖 Fetching profile for:', { account_id, role });
+    }
+
+    // Get auth account info
     const authAccount = await models.auth_accounts.findByPk(account_id, {
-      attributes: { exclude: ['password_hash'] },
+      attributes: { 
+        exclude: ['password_hash'],
+        include: [
+          'account_id',
+          'email',
+          'phone_number',
+          'role',
+          'is_active',
+          'phone_verified',
+          'email_verified',
+          'password_set',
+          'profile_completed', //  Include completion status
+          'created_at',
+          'updated_at'
+        ]
+      },
     });
 
     if (!authAccount) {
+      if (isDevelopment) console.log('❌ Account not found:', account_id);
       return res.status(404).json({ error: 'Account not found' });
     }
 
+    // Get role-specific profile data
     let roleData = null;
     switch (role) {
       case 'user':
         roleData = await models.users.findOne({ 
           where: { account_id },
-          attributes: { 
-            exclude: ['created_at', 'updated_at'] 
-          }
+          attributes: { exclude: ['password_hash'] } // Safety
         });
-        // ✅ FIX: If email is missing in users table but exists in auth_accounts, sync it
-        if (roleData && !roleData.email && authAccount.email) {
-          if (isDevelopment) {
-            console.log('🔄 Syncing email from auth_accounts to users table');
-          }
-          await roleData.update({ email: authAccount.email });
-          roleData.email = authAccount.email;
-        }
         break;
       case 'vendor':
         roleData = await models.vendors.findOne({ 
           where: { account_id },
-          attributes: { exclude: ['created_at', 'updated_at'] }
+          attributes: { exclude: ['password_hash'] }
         });
         break;
       case 'rider':
         roleData = await models.riders.findOne({ 
           where: { account_id },
-          attributes: { exclude: ['created_at', 'updated_at'] }
+          attributes: { exclude: ['password_hash'] }
         });
         break;
       case 'admin':
         roleData = await models.admin_users.findOne({ 
           where: { account_id },
-          attributes: { exclude: ['created_at', 'updated_at'] }
+          attributes: { exclude: ['password_hash'] }
         });
         break;
     }
 
-    await logAuditEvent(authAccount.account_id, 'get_profile', { role, ip: req.ip });
+    if (!roleData) {
+      if (isDevelopment) console.log('⚠️  Role data not found for:', role);
+      return res.status(404).json({ error: `${role} profile not found` });
+    }
+
+    await logAuditEvent(authAccount.account_id, 'get_profile', { 
+      role, 
+      ip: req.ip 
+    });
 
     if (isDevelopment) {
       console.log('✅ Profile retrieved:', {
+        account_id: authAccount.account_id,
         email: authAccount.email,
-        role,
-        profile_email: roleData?.email
+        profile_completed: authAccount.profile_completed,
       });
     }
 
@@ -984,186 +1220,230 @@ exports.getProfile = async (req, res, next) => {
       account: authAccount,
       profile: roleData,
       role,
+      // ✅ Include helpful flags
+      profile_completed: authAccount.profile_completed,
+      password_set: authAccount.password_set,
     });
   } catch (err) {
-    console.error('Get profile error:', err);
+    console.error('❌ Get profile error:', err);
     res.status(500).json({
       error: 'Failed to retrieve profile',
-      ...(isDevelopment && { details: err.message }),
+      ...(isDevelopment && { details: err.message, stack: err.stack }),
     });
   }
 };
 
 // -------------------------
-// UPDATE PROFILE 
+// UPDATE PROFILE
 // -------------------------
 exports.updateProfile = async (req, res, next) => {
   const isDevelopment = process.env.NODE_ENV !== 'production';
   const t = await sequelize.transaction();
+  
   try {
     const { account_id, role } = req.user;
     let updates = { ...req.body };
 
-    // ✅ FIX: Separate auth_accounts updates from role-specific updates
-    const authUpdates = {};
-    const roleUpdates = {};
+    if (isDevelopment) {
+      console.log('📝 Update profile attempt:', {
+        account_id,
+        role,
+        fields: Object.keys(updates),
+      });
+    }
 
-    // Email goes to auth_accounts
+    // Remove sensitive/protected fields
+    const protectedFields = [
+      'password_hash', 'account_id', 'role', 'created_at', 
+      'updated_at', 'user_id', 'vendor_id', 'rider_id', 'admin_id',
+      'phone_verified', 'email_verified', 'is_active'
+    ];
+    protectedFields.forEach(field => delete updates[field]);
+
+    // Nothing to update
+    if (Object.keys(updates).length === 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    // Sanitize string inputs
+    for (const key in updates) {
+      if (typeof updates[key] === 'string') {
+        updates[key] = validator.escape(updates[key].trim());
+      }
+    }
+
+    // ✅ Handle email updates with proper validation
+    let emailUpdated = false;
     if (updates.email) {
-      if (!validator.isEmail(updates.email)) {
+      const cleanEmail = updates.email.trim().toLowerCase();
+      
+      if (!validator.isEmail(cleanEmail)) {
         await t.rollback();
         return res.status(400).json({ error: 'Invalid email format' });
       }
-      
-      const normalizedEmail = updates.email.trim().toLowerCase();
-      
+
       // Check if email already exists for another account
       const existingEmail = await models.auth_accounts.findOne({
-        where: { 
-          email: normalizedEmail,
-          account_id: { [models.Sequelize.Op.ne]: account_id }
-        }
+        where: {
+          [models.Sequelize.Op.and]: [
+            {
+              [models.Sequelize.Op.or]: [
+                { email: cleanEmail },
+                { email: validator.normalizeEmail(cleanEmail) }
+              ]
+            },
+            { account_id: { [models.Sequelize.Op.ne]: account_id } }
+          ]
+        },
+        transaction: t,
       });
-      
+
       if (existingEmail) {
         await t.rollback();
-        return res.status(409).json({ error: 'Email already in use' });
+        return res.status(409).json({ error: 'Email already registered to another account' });
       }
-      
-      authUpdates.email = normalizedEmail;
-      delete updates.email; // Remove from role updates
+
+      updates.email = cleanEmail;
+      emailUpdated = true;
+
+      if (isDevelopment) console.log('✅ Email will be updated to:', cleanEmail);
     }
 
-    // Phone can go to both auth_accounts and role table
+    // ✅ Handle phone updates
     if (updates.phone_number || updates.phone) {
       const phone = updates.phone_number || updates.phone;
-      if (!validator.isMobilePhone(phone, 'any')) {
+      
+      if (!phone.match(/^\+\d{10,15}$/)) {
         await t.rollback();
-        return res.status(400).json({ error: 'Invalid phone number format' });
+        return res.status(400).json({ 
+          error: 'Invalid phone number format. Use E.164 format (e.g., +254712345678)' 
+        });
       }
-      authUpdates.phone_number = validator.escape(phone);
-      roleUpdates.phone_number = validator.escape(phone);
-      delete updates.phone_number;
-      delete updates.phone;
+
+      // Check if phone already exists
+      const existingPhone = await models.auth_accounts.findOne({
+        where: {
+          phone_number: phone,
+          account_id: { [models.Sequelize.Op.ne]: account_id }
+        },
+        transaction: t,
+      });
+
+      if (existingPhone) {
+        await t.rollback();
+        return res.status(409).json({ error: 'Phone number already registered to another account' });
+      }
+
+      updates.phone_number = phone;
+      delete updates.phone; // Normalize field name
     }
 
-    // Remove sensitive/system fields
-    delete updates.password_hash;
-    delete updates.account_id;
-    delete updates.role;
-    delete updates.created_at;
-    delete updates.updated_at;
-    delete updates.user_id;
-    delete updates.vendor_id;
-    delete updates.rider_id;
-    delete updates.admin_id;
-
-    // Sanitize remaining fields for role-specific updates
-    for (const key in updates) {
-      if (typeof updates[key] === 'string') {
-        roleUpdates[key] = validator.escape(updates[key].trim());
-      } else {
-        roleUpdates[key] = updates[key];
-      }
-    }
-
-    // Update auth_accounts if needed
-    if (Object.keys(authUpdates).length > 0) {
-      const authAccount = await models.auth_accounts.findByPk(account_id);
-      if (authAccount) {
-        await authAccount.update(authUpdates, { transaction: t });
-        if (isDevelopment) console.log('✅ Updated auth_accounts:', authUpdates);
-      }
-    }
-
-    // Update role-specific table
+    // ✅ Update role-specific profile
     let updatedProfile = null;
+    let profileModel = null;
+    let whereClause = { account_id };
+
     switch (role) {
       case 'user':
-        const user = await models.users.findOne({ where: { account_id } });
-        if (user && Object.keys(roleUpdates).length > 0) {
-          await user.update(roleUpdates, { transaction: t });
-          updatedProfile = user.toJSON();
-        } else if (user) {
-          updatedProfile = user.toJSON();
-        }
+        profileModel = models.users;
         break;
-        
       case 'vendor':
-        const vendor = await models.vendors.findOne({ where: { account_id } });
-        if (vendor && Object.keys(roleUpdates).length > 0) {
-          await vendor.update(roleUpdates, { transaction: t });
-          updatedProfile = vendor.toJSON();
-        } else if (vendor) {
-          updatedProfile = vendor.toJSON();
-        }
+        profileModel = models.vendors;
         break;
-        
       case 'rider':
-        const rider = await models.riders.findOne({ where: { account_id } });
-        if (rider && Object.keys(roleUpdates).length > 0) {
-          await rider.update(roleUpdates, { transaction: t });
-          updatedProfile = rider.toJSON();
-        } else if (rider) {
-          updatedProfile = rider.toJSON();
-        }
+        profileModel = models.riders;
         break;
-        
       case 'admin':
-        const admin = await models.admin_users.findOne({ where: { account_id } });
-        if (admin && Object.keys(roleUpdates).length > 0) {
-          await admin.update(roleUpdates, { transaction: t });
-          updatedProfile = admin.toJSON();
-        } else if (admin) {
-          updatedProfile = admin.toJSON();
-        }
+        profileModel = models.admin_users;
         break;
+      default:
+        await t.rollback();
+        return res.status(400).json({ error: 'Invalid role' });
     }
 
-    if (!updatedProfile) {
-      await t.rollback();
-      return res.status(404).json({ error: 'Profile not found' });
-    }
-
-    // ✅ FIX: Always merge email from auth_accounts into response
-    const authAccount = await models.auth_accounts.findByPk(account_id, {
-      attributes: ['email', 'phone_number']
+    const profile = await profileModel.findOne({ 
+      where: whereClause,
+      transaction: t,
     });
-    
-    if (authAccount) {
-      updatedProfile.email = authAccount.email || updatedProfile.email;
-      if (!updatedProfile.phone_number && authAccount.phone_number) {
-        updatedProfile.phone_number = authAccount.phone_number;
-      }
+
+    if (!profile) {
+      await t.rollback();
+      return res.status(404).json({ error: `${role} profile not found` });
+    }
+
+    // Update profile
+    await profile.update(updates, { transaction: t });
+    updatedProfile = profile;
+
+    // ✅ If email was updated, also update auth_accounts table
+    if (emailUpdated) {
+      await models.auth_accounts.update(
+        { 
+          email: updates.email,
+          updated_at: new Date(),
+        },
+        { 
+          where: { account_id },
+          transaction: t,
+        }
+      );
+
+      if (isDevelopment) console.log('✅ Auth account email updated');
+    }
+
+    // ✅ If phone was updated, also update auth_accounts table
+    if (updates.phone_number) {
+      await models.auth_accounts.update(
+        { 
+          phone_number: updates.phone_number,
+          updated_at: new Date(),
+        },
+        { 
+          where: { account_id },
+          transaction: t,
+        }
+      );
+
+      if (isDevelopment) console.log('✅ Auth account phone updated');
     }
 
     await t.commit();
 
     await logAuditEvent(account_id, 'update_profile', { 
-      role, 
-      updated_fields: Object.keys({ ...authUpdates, ...roleUpdates }),
+      role,
+      updated_fields: Object.keys(updates),
+      email_updated: emailUpdated,
       ip: req.ip 
     });
 
     if (isDevelopment) {
       console.log('✅ Profile updated successfully:', {
+        account_id,
         role,
         email: updatedProfile.email,
-        auth_updates: Object.keys(authUpdates),
-        role_updates: Object.keys(roleUpdates),
       });
     }
 
     res.json({
       message: 'Profile updated successfully',
       profile: updatedProfile,
+      ...(emailUpdated && { email_updated: true }),
     });
   } catch (err) {
     await t.rollback();
-    console.error('Update profile error:', err);
+    console.error('❌ Update profile error:', err);
+    
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({
+        error: 'Email or phone number already registered',
+        ...(isDevelopment && { details: err.errors?.map(e => e.message) }),
+      });
+    }
+
     res.status(500).json({
       error: 'Failed to update profile',
-      ...(isDevelopment && { details: err.message }),
+      ...(isDevelopment && { details: err.message, stack: err.stack }),
     });
   }
 };
@@ -1571,201 +1851,6 @@ exports.verifyOTP = async (req, res, next) => {
   }
 };
 
-// -------------------------
-// REGISTER WITH PHONE (With Optional Password) 
-// -------------------------
-exports.registerWithPhone = async (req, res, next) => {
-  const isDevelopment = process.env.NODE_ENV !== 'production';
-  const t = await sequelize.transaction();
-  try {
-    const { phone, firstName, lastName, email, password } = req.body;
-
-    if (isDevelopment) {
-      console.log('📝 Phone registration attempt:', {
-        phone,
-        firstName,
-        lastName,
-        email,
-        hasPassword: !!password,
-      });
-    }
-
-    // Validation
-    if (!phone || !firstName || !lastName) {
-      await t.rollback();
-      return res.status(400).json({ 
-        error: 'Phone number, first name, and last name are required' 
-      });
-    }
-
-    if (!phone.match(/^\+\d{10,15}$/)) {
-      await t.rollback();
-      return res.status(400).json({ 
-        error: 'Invalid phone number format. Use E.164 format (e.g., +254712345678)' 
-      });
-    }
-
-    // ✅ FIX: Normalize email consistently (same as login)
-    const cleanEmail = email ? email.trim().toLowerCase() : null;
-
-    if (cleanEmail && !validator.isEmail(cleanEmail)) {
-      await t.rollback();
-      return res.status(400).json({ error: 'Invalid email format' });
-    }
-
-    // Validate password if provided
-    if (password) {
-      if (password.length < 8) {
-        await t.rollback();
-        return res.status(400).json({ 
-          error: 'Password must be at least 8 characters long' 
-        });
-      }
-      // Strong password validation
-      if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
-        await t.rollback();
-        return res.status(400).json({ 
-          error: 'Password must contain uppercase, lowercase, and number' 
-        });
-      }
-    }
-
-    // Check if phone already registered
-    const existingAuth = await models.auth_accounts.findOne({
-      where: { phone_number: phone },
-    });
-
-    if (existingAuth) {
-      await t.rollback();
-      if (isDevelopment) console.log('❌ Phone already registered:', phone);
-      return res.status(409).json({ error: 'Phone number already registered' });
-    }
-
-    // Check if email already registered (if provided)
-    if (cleanEmail) {
-      const existingEmail = await models.auth_accounts.findOne({
-        where: {
-          [models.Sequelize.Op.or]: [
-            { email: cleanEmail },
-            { email: validator.normalizeEmail(cleanEmail) }
-          ]
-        }
-      });
-
-      if (existingEmail) {
-        await t.rollback();
-        return res.status(409).json({ error: 'Email already registered' });
-      }
-    }
-
-    if (isDevelopment) console.log('✅ Creating new phone-based user account');
-
-    // Hash password (user-provided or dummy)
-    let passwordHash;
-    if (password && password.trim()) {
-      passwordHash = await bcrypt.hash(password, 10);
-      if (isDevelopment) console.log('🔐 Using user-provided password');
-    } else {
-      const dummyPassword = crypto.randomBytes(32).toString('hex');
-      passwordHash = await bcrypt.hash(dummyPassword, 10);
-      if (isDevelopment) console.log('🔐 Generated dummy password (can be set later)');
-    }
-
-    // Create auth account
-    const authAccount = await models.auth_accounts.create(
-      {
-        role: 'user',
-        email: cleanEmail, // ✅ Use consistent format
-        phone_number: phone,
-        password_hash: passwordHash,
-        is_active: true,
-        phone_verified: true,
-        password_set: !!password, // Track if password was set
-      },
-      { transaction: t }
-    );
-
-    if (isDevelopment) {
-      console.log('✅ Auth account created:', {
-        account_id: authAccount.account_id,
-        phone: authAccount.phone_number,
-        email: authAccount.email,
-        password_set: authAccount.password_set,
-      });
-    }
-
-    // Generate referral code
-    const referralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
-
-    // ✅ FIX: Store email in users table too
-    const user = await models.users.create(
-      {
-        user_id: authAccount.account_id,
-        account_id: authAccount.account_id,
-        first_name: firstName.trim().substring(0, 100),
-        last_name: lastName.trim().substring(0, 100),
-        email: cleanEmail, // ✅ ADD EMAIL HERE
-        phone_number: phone,
-        referral_code: referralCode,
-        status: 'active',
-      },
-      { transaction: t }
-    );
-
-    if (isDevelopment) {
-      console.log('✅ User profile created:', {
-        user_id: user.user_id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        email: user.email, // ✅ Log email
-      });
-    }
-
-    await t.commit();
-
-    // Generate token
-    const token = signToken(authAccount, { user_id: user.user_id });
-
-    await logAuditEvent(authAccount.account_id, 'register_with_phone', { 
-      phone, 
-      email: cleanEmail,
-      password_set: !!password,
-      ip: req.ip 
-    });
-
-    if (isDevelopment) console.log('✅ User registered successfully via phone:', phone);
-
-    res.status(201).json({
-      message: 'Registration successful',
-      token,
-      role: 'user',
-      password_set: !!password, // Tell frontend if password was set
-      user: {
-        user_id: user.user_id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        phone_number: user.phone_number,
-        email: cleanEmail, // ✅ Return email
-        referral_code: user.referral_code,
-      },
-    });
-  } catch (err) {
-    await t.rollback();
-    console.error('❌ Phone registration error:', err);
-    
-    if (err.name === 'SequelizeUniqueConstraintError') {
-      return res.status(409).json({
-        error: 'Phone number or email already registered',
-        ...(isDevelopment && { details: err.errors?.map(e => e.message) }),
-      });
-    }
-
-    res.status(500).json({
-      error: 'Registration failed',
-      ...(isDevelopment && { details: err.message, stack: err.stack }),
-    });
-  }
-};
 
 // -------------------------
 // UNIFIED CHANGE PASSWORD (Handles both set and update)
