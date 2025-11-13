@@ -1,53 +1,7 @@
-// // routes/orders.js - Order management routes
-// const express = require('express');
-// const router = express.Router();
-// const orderController = require('../controllers/orderController');
+// ============================================
+// routes/orders.js - FIXED & ALIGNED
+// ============================================
 
-// // --- DIAGNOSTIC LOG ---
-// // This will print the contents of the imported controller to your console.
-// // If it's empty or missing functions, we'll know the import is the problem.
-// //console.log('--- Imported orderController: ---');
-// //console.log(orderController);
-// //console.log('---------------------------------;')
-
-// const { authenticateToken } = require('../middleware/authMiddleware');
-// // Assuming validation file exists, if not, you can comment this out.
-//  const { validateOrderCreation } = require('../utils/validation');
-
-// // All order routes require authentication
-// router.use(authenticateToken);
-
-// // Order lifecycle
-// // The 'validateOrderCreation' middleware is included. If you don't have this file, remove it from the line below.
-// router.post('/',  validateOrderCreation,  orderController.createOrder); // This corresponds to line 15 in a typical editor
-// router.get('/', orderController.getUserOrders);
-// router.get('/:orderId', orderController.getOrderDetails);
-// router.put('/:orderId/cancel', orderController.cancelOrder);
-
-// // Order tracking
-// router.get('/:orderId/track', orderController.trackOrder);
-// router.get('/:orderId/timeline', orderController.getOrderTimeline);
-
-// // Order modifications (before confirmation)
-// router.put('/:orderId/items', orderController.updateOrderItems);
-// router.put('/:orderId/address', orderController.updateDeliveryAddress);
-
-// // Order feedback
-// router.post('/:orderId/review', orderController.submitOrderReview);
-// router.post('/:orderId/rate-rider', orderController.rateRider);
-
-// // Repeat orders
-// router.post('/:orderId/repeat', orderController.repeatOrder);
-
-// // Delivery scheduling
-// router.get('/:orderId/delivery-slots', orderController.getDeliverySlots);
-// router.put('/:orderId/delivery-slot', orderController.updateDeliverySlot);
-
-
-// module.exports = router;
-
-
-// routes/orders.js
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/orderController');
@@ -61,31 +15,30 @@ const {
 } = require('../middleware/auth');
 
 // =========================================================================
-// PUBLIC ROUTES (Guest + Authenticated)
+// PUBLIC/GUEST ROUTES
 // =========================================================================
 
 /**
- * @route   POST /api/v1/orders
- * @desc    Create new order (guest or authenticated user)
+ * @route   POST /api/v1/orders/draft
+ * @desc    Create new draft order (MATCHES Flutter createDraftOrder)
  * @access  Public/Authenticated
- * @body    {
- *   user_id: string (required for auth, "guest" for guests),
- *   outlet_id: string (required),
- *   vendor_id: string (optional),
- *   items: [{product_id, product_name, quantity, unit_price}] (required),
- *   total_price: number (required),
- *   phone_number: string (optional),
- *   notes: string (optional),
- *   delivery_notes: string (optional),
- *   delivery_address: string (optional),
- *   delivery_latitude: number (optional),
- *   delivery_longitude: number (optional),
- *   scheduled_date: string (optional, format: YYYY-MM-DD),
- *   scheduled_time: string (optional, format: HH:mm),
- *   payment_method: string (optional),
- *   coupon_code: string (optional),
- *   is_guest: boolean (optional, default: false)
+ * @body    { 
+ *   user_id, outlet_id, items, total_price, 
+ *   customer_email, customer_phone, 
+ *   delivery_latitude, delivery_longitude, 
+ *   delivery_address, delivery_notes, 
+ *   is_guest 
  * }
+ * @note    ✅ NEW - Matches Flutter's createDraftOrder endpoint
+ */
+router.post('/draft', optionalAuth, orderController.createDraftOrder);
+
+/**
+ * @route   POST /api/v1/orders
+ * @desc    Create new order (standard - backward compatibility)
+ * @access  Public/Authenticated
+ * @body    { user_id, outlet_id, items, total_price, ... }
+ * @note    Order created in DRAFT status, ready for payment
  */
 router.post('/', optionalAuth, orderController.createOrder);
 
@@ -94,14 +47,47 @@ router.post('/', optionalAuth, orderController.createOrder);
 // =========================================================================
 
 /**
+ * @route   POST /api/v1/orders/:orderId/confirm
+ * @desc    Confirm draft order after payment initiation
+ * @access  Private (Owner/Admin)
+ * @body    { 
+ *   payment_tracking_id: string (optional),
+ *   payment_method: string (optional),
+ *   phone_number: string (optional),
+ *   email: string (optional)
+ * }
+ * @note    Moves order from DRAFT to PENDING status
+ */
+router.post('/:orderId/confirm', optionalAuth, orderController.confirmOrder);
+
+/**
+ * @route   POST /api/v1/orders/:orderId/cancel-draft
+ * @desc    Cancel draft order (if payment failed/cancelled)
+ * @access  Private (Owner/Admin)
+ * @body    { cancellation_reason: string (optional) }
+ * @note    Only works for orders in DRAFT status
+ */
+router.post('/:orderId/cancel-draft', optionalAuth, orderController.cancelDraftOrder);
+
+/**
+ * @route   PUT /api/v1/orders/:orderId/payment-status
+ * @desc    Update payment status (usually called by payment webhooks)
+ * @access  Private (Admin/System)
+ * @body    {
+ *   payment_status: 'pending' | 'paid' | 'partially_paid' | 'refunded' | 'failed',
+ *   transaction_id: string (optional),
+ *   payment_reference: string (optional)
+ * }
+ * @note    ✅ FIXED - Now properly exported and implemented
+ *          Auto-confirms order if payment_status = 'paid' and order is in DRAFT
+ */
+router.put('/:orderId/payment-status', optionalAuth, orderController.updatePaymentStatus);
+
+/**
  * @route   GET /api/v1/orders/user
  * @desc    Get current user's order history
  * @access  Private (User only)
- * @query   {
- *   status: string (optional, filter by order_status),
- *   limit: number (optional, default: 50),
- *   offset: number (optional, default: 0)
- * }
+ * @query   { status, limit, offset }
  */
 router.get('/user', authenticateToken, requireUserRole, orderController.getUserOrders);
 
@@ -109,18 +95,27 @@ router.get('/user', authenticateToken, requireUserRole, orderController.getUserO
  * @route   GET /api/v1/orders/:orderId
  * @desc    Get detailed order information by ID
  * @access  Private (Owner/Admin/Vendor/Rider)
- * @note    Authorization checked in controller based on user role
  */
-router.get('/:orderId', authenticateToken, orderController.getOrderById);
+router.get('/:orderId', optionalAuth, orderController.getOrderById);
+
+/**
+ * @route   PUT /api/v1/orders/:orderId
+ * @desc    Update order with payment and delivery details
+ * @access  Private (Owner/Admin/Vendor)
+ * @body    {
+ *   payment_method, delivery_fee, delivery_type,
+ *   delivery_latitude, delivery_longitude, delivery_address,
+ *   phone_number, status, notes
+ * }
+ * @note    ✅ ADDED - Matches Flutter's updateOrder method
+ */
+router.put('/:orderId', authenticateToken, orderController.updateOrder);
 
 /**
  * @route   PUT /api/v1/orders/:orderId/status
  * @desc    Update order status (for vendors/riders/admin)
  * @access  Private (Admin/Vendor only)
- * @body    {
- *   order_status: string (required, one of: pending, confirmed, preparing, 
- *                        ready, dispatched, delivered, canceled, refunded)
- * }
+ * @body    { order_status: string }
  */
 router.put(
   '/:orderId/status', 
@@ -133,56 +128,35 @@ router.put(
  * @route   PUT /api/v1/orders/:orderId/cancel
  * @desc    Cancel an order (user or admin)
  * @access  Private (Owner/Admin)
- * @body    {
- *   cancellation_reason: string (optional)
- * }
+ * @body    { cancellation_reason: string (optional) }
  */
 router.put('/:orderId/cancel', authenticateToken, orderController.cancelOrder);
 
 // =========================================================================
-// OPTIONAL ADVANCED ROUTES (Uncomment when implemented)
+// ADMIN/VENDOR ROUTES
 // =========================================================================
 
 /**
- * @route   GET /api/v1/orders/:orderId/track
- * @desc    Track order in real-time (get rider location and status)
- * @access  Private (Owner)
+ * @route   GET /api/v1/orders
+ * @desc    Get all orders (admin/vendor view)
+ * @access  Private (Admin/Vendor only)
+ * @query   { status, vendor_id, limit, offset }
+ * @note    ✅ FIXED - Now properly implemented
  */
-// router.get('/:orderId/track', authenticateToken, requireUserRole, orderController.trackOrder);
+router.get('/', authenticateToken, requireAdminOrVendorRole, orderController.getAllOrders);
 
 /**
- * @route   GET /api/v1/orders/:orderId/timeline
- * @desc    Get order status timeline with timestamps
- * @access  Private (Owner)
+ * @route   PUT /api/v1/orders/:orderId/assign-rider
+ * @desc    Manually assign rider to order
+ * @access  Private (Admin/Vendor only)
+ * @body    { rider_id: number }
+ * @note    ✅ FIXED - Now properly implemented
  */
-// router.get('/:orderId/timeline', authenticateToken, requireUserRole, orderController.getOrderTimeline);
-
-/**
- * @route   POST /api/v1/orders/:orderId/repeat
- * @desc    Repeat/reorder a previous order
- * @access  Private (Owner)
- */
-// router.post('/:orderId/repeat', authenticateToken, requireUserRole, orderController.repeatOrder);
-
-/**
- * @route   POST /api/v1/orders/:orderId/review
- * @desc    Submit order review and rating
- * @access  Private (Owner)
- * @body    {
- *   overall_rating: number (required, 1-5),
- *   comment: string (optional)
- * }
- */
-// router.post('/:orderId/review', authenticateToken, requireUserRole, orderController.submitOrderReview);
-
-/**
- * @route   POST /api/v1/orders/:orderId/rate-rider
- * @desc    Rate the delivery rider
- * @access  Private (Owner)
- * @body    {
- *   overall_rating: number (required, 1-5)
- * }
- */
-// router.post('/:orderId/rate-rider', authenticateToken, requireUserRole, orderController.rateRider);
+router.put(
+  '/:orderId/assign-rider',
+  authenticateToken,
+  requireAdminOrVendorRole,
+  orderController.assignRider
+);
 
 module.exports = router;

@@ -7,7 +7,7 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const geocodingRoutes = require('./routes/geocoding');
 const multiLayerCache = require('./services/multiLayerCache');
-
+const pesapalRoutes = require('./routes/pesapal');
 // Import database connection and models
 const sequelize = require('./config/db');
 const initModels = require('./models/init-models');
@@ -95,7 +95,8 @@ app.use('/api/v1/users/register', authLimiter);
 app.use('/api/v1/riders/login', authLimiter);
 app.use('/api/v1/vendors/login', authLimiter);
 app.use('/api/v1/admin/login', authLimiter);
-
+// Register routes
+app.use('/api/v1/payments/pesapal', pesapalRoutes);
 // Body + compression + logging
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

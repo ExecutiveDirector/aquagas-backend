@@ -1,595 +1,7 @@
-// const initModels = require('../models/init-models');
-// const sequelize = require('../config/db');
-// const models = initModels(sequelize);
+// ============================================
+// controllers/orderController.js - FIXED & ALIGNED
+// ============================================
 
-// const createOrder = async (req, res, next) => {
-//   try {
-//     const { user_id, total_price, items, outlet_id, delivery_latitude, delivery_longitude, delivery_address } = req.body;
-    
-//     // Detailed validation with specific error messages
-//     const missingFields = [];
-//     if (!user_id) missingFields.push('user_id');
-//     if (!total_price) missingFields.push('total_price');
-//     if (!items) missingFields.push('items');
-//     if (!outlet_id) missingFields.push('outlet_id');
-//     if (!delivery_latitude) missingFields.push('delivery_latitude');
-//     if (!delivery_longitude) missingFields.push('delivery_longitude');
-    
-//     if (missingFields.length > 0) {
-//       return res.status(400).json({ 
-//         error: 'Missing required fields',
-//         missing_fields: missingFields,
-//         received_fields: Object.keys(req.body)
-//       });
-//     }
-    
-//     if (!Array.isArray(items)) {
-//       return res.status(400).json({ 
-//         error: 'items must be an array',
-//         received_type: typeof items
-//       });
-//     }
-    
-//     if (items.length === 0) {
-//       return res.status(400).json({ error: 'items array cannot be empty' });
-//     }
-    
-//     // Validate each item
-//     for (let i = 0; i < items.length; i++) {
-//       const item = items[i];
-//       if (!item.product_id || !item.quantity || !item.unit_price) {
-//         return res.status(400).json({ 
-//           error: `Invalid item at index ${i}. Required: product_id, quantity, unit_price`,
-//           received_item: item
-//         });
-//       }
-//     }
-    
-//     // Authorization check
-//     if (user_id !== req.user.user_id) {
-//       return res.status(403).json({ 
-//         error: 'Unauthorized',
-//         details: 'user_id does not match authenticated user'
-//       });
-//     }
-
-//     // Verify outlet exists
-//     const outlet = await models.vendor_outlets.findByPk(outlet_id);
-//     if (!outlet) {
-//       return res.status(404).json({ error: 'Outlet not found' });
-//     }
-
-//     // Calculate totals
-//     const subtotal = items.reduce((sum, item) => 
-//       sum + (item.quantity * item.unit_price), 0
-//     );
-
-//     // Create order with proper field mapping
-//     const order = await models.orders.create({
-//       customer_id: user_id,
-//       outlet_id,
-//       subtotal: subtotal,
-//       delivery_fee: 0, // Set this based on your business logic
-//       tax_amount: 0,   // Calculate if needed
-//       discount_amount: 0,
-//       total_amount: total_price, // Use total_amount for database
-//       order_status: 'pending',
-//       payment_status: 'pending',
-//       delivery_latitude,
-//       delivery_longitude,
-//       delivery_address: delivery_address || null,
-//       delivery_type: 'home_delivery',
-//       created_at: new Date(),
-//     });
-
-//     // Create order items with proper field mapping
-//     const orderItems = items.map(item => ({
-//       order_id: order.order_id,
-//       product_id: item.product_id,
-//       product_name: item.product_name || 'Product', // Cache product name
-//       quantity: item.quantity,
-//       unit_price: item.unit_price,
-//       total_price: item.quantity * item.unit_price,
-//     }));
-    
-//     await models.order_items.bulkCreate(orderItems);
-
-//     // Auto-assign rider (with error handling)
-//     let assignedRiderId = null;
-//     try {
-//       const [results] = await sequelize.query(
-//         'CALL sp_auto_assign_rider(:orderId, @assigned_rider_id); SELECT @assigned_rider_id AS assigned_rider_id;',
-//         { replacements: { orderId: order.order_id } }
-//       );
-//       assignedRiderId = results[0]?.assigned_rider_id || null;
-//     } catch (err) {
-//       console.warn('Warning: sp_auto_assign_rider failed, continuing without rider assignment', err.message);
-//     }
-
-//     // Calculate loyalty points (with error handling)
-//     let pointsEarned = 0;
-//     try {
-//       const [results] = await sequelize.query(
-//         'CALL sp_calculate_loyalty_points(:userId, :orderAmount, @points_earned); SELECT @points_earned AS points_earned;',
-//         { replacements: { userId: user_id, orderAmount: total_price } }
-//       );
-//       pointsEarned = results[0]?.points_earned || 0;
-//     } catch (err) {
-//       console.warn('Warning: sp_calculate_loyalty_points failed', err.message);
-//     }
-
-//     res.status(201).json({ 
-//       message: 'Order created successfully', 
-//       order: {
-//         order_id: order.order_id,
-//         order_number: order.order_number,
-//         customer_id: order.customer_id,
-//         outlet_id: order.outlet_id,
-//         total_amount: order.total_amount,
-//         order_status: order.order_status,
-//         payment_status: order.payment_status,
-//         created_at: order.created_at,
-//       },
-//       assigned_rider_id: assignedRiderId, 
-//       points_earned: pointsEarned 
-//     });
-//   } catch (err) {
-//     console.error('Error creating order:', err);
-    
-//     // Send detailed error info in development
-//     if (process.env.NODE_ENV === 'development') {
-//       return res.status(500).json({
-//         error: 'Internal server error',
-//         message: err.message,
-//         stack: err.stack
-//       });
-//     }
-    
-//     next(err);
-//   }
-// };
-
-// const getUserOrders = async (req, res, next) => {
-//   try {
-//     const orders = await models.orders.findAll({
-//       where: { customer_id: req.user.user_id },
-//       include: [
-//         { 
-//           model: models.order_items, 
-//           as: 'order_items', 
-//           include: [{ model: models.products, as: 'product' }] 
-//         },
-//         { model: models.vendor_outlets, as: 'outlet' },
-//       ],
-//       order: [['created_at', 'DESC']]
-//     });
-//     res.json(orders);
-//   } catch (err) {
-//     console.error('Error fetching user orders:', err);
-//     next(err);
-//   }
-// };
-
-// const getOrderDetails = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId, {
-//       include: [
-//         { 
-//           model: models.order_items, 
-//           as: 'order_items', 
-//           include: [{ model: models.products, as: 'product' }] 
-//         },
-//         { model: models.vendor_outlets, as: 'outlet' },
-//         { model: models.riders, as: 'rider' },
-//       ],
-//     });
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     res.json(order);
-//   } catch (err) {
-//     console.error('Error fetching order details:', err);
-//     next(err);
-//   }
-// };
-
-// const cancelOrder = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId);
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     if (order.order_status !== 'pending') {
-//       return res.status(400).json({ 
-//         error: 'Order cannot be canceled',
-//         current_status: order.order_status
-//       });
-//     }
-    
-//     order.order_status = 'cancelled'; // Match DB enum spelling
-//     order.updated_at = new Date();
-//     await order.save();
-    
-//     res.json({ message: 'Order canceled successfully' });
-//   } catch (err) {
-//     console.error('Error canceling order:', err);
-//     next(err);
-//   }
-// };
-
-// const trackOrder = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId, {
-//       include: [
-//         { model: models.riders, as: 'rider' },
-//         { model: models.delivery_assignments, as: 'delivery_assignments' },
-//       ],
-//     });
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     res.json({
-//       order_id: order.order_id,
-//       status: order.order_status,
-//       rider: order.rider ? { 
-//         id: order.rider.rider_id, 
-//         name: order.rider.name 
-//       } : null,
-//       current_location: order.delivery_assignments?.[0]?.current_location || null,
-//     });
-//   } catch (err) {
-//     console.error('Error tracking order:', err);
-//     next(err);
-//   }
-// };
-
-// const getOrderTimeline = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId);
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     // Build timeline from order timestamps
-//     const timeline = [
-//       { status: 'pending', timestamp: order.created_at }
-//     ];
-    
-//     if (order.assigned_at) {
-//       timeline.push({ status: 'assigned', timestamp: order.assigned_at });
-//     }
-//     if (order.dispatched_at) {
-//       timeline.push({ status: 'dispatched', timestamp: order.dispatched_at });
-//     }
-//     if (order.delivered_at) {
-//       timeline.push({ status: 'delivered', timestamp: order.delivered_at });
-//     }
-    
-//     res.json(timeline);
-//   } catch (err) {
-//     console.error('Error fetching order timeline:', err);
-//     next(err);
-//   }
-// };
-
-// const updateOrderItems = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId);
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     if (order.order_status !== 'pending') {
-//       return res.status(400).json({ error: 'Order cannot be modified' });
-//     }
-
-//     const { items } = req.body;
-//     if (!items || !Array.isArray(items)) {
-//       return res.status(400).json({ error: 'Items array required' });
-//     }
-
-//     // Remove existing items and add new ones
-//     await models.order_items.destroy({ where: { order_id: order.order_id } });
-    
-//     const orderItems = items.map(item => ({
-//       order_id: order.order_id,
-//       product_id: item.product_id,
-//       product_name: item.product_name || 'Product',
-//       quantity: item.quantity,
-//       unit_price: item.unit_price,
-//       total_price: item.quantity * item.unit_price,
-//     }));
-//     await models.order_items.bulkCreate(orderItems);
-
-//     // Update total price
-//     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-//     order.subtotal = subtotal;
-//     order.total_amount = subtotal + order.delivery_fee + order.tax_amount - order.discount_amount;
-//     order.updated_at = new Date();
-//     await order.save();
-
-//     res.json({ message: 'Order items updated', order });
-//   } catch (err) {
-//     console.error('Error updating order items:', err);
-//     next(err);
-//   }
-// };
-
-// const updateDeliveryAddress = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId);
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     if (order.order_status !== 'pending') {
-//       return res.status(400).json({ error: 'Order cannot be modified' });
-//     }
-
-//     const { delivery_latitude, delivery_longitude, delivery_address } = req.body;
-//     if (!delivery_latitude || !delivery_longitude) {
-//       return res.status(400).json({ error: 'Invalid coordinates' });
-//     }
-
-//     order.delivery_latitude = delivery_latitude;
-//     order.delivery_longitude = delivery_longitude;
-//     if (delivery_address) {
-//       order.delivery_address = delivery_address;
-//     }
-//     order.updated_at = new Date();
-//     await order.save();
-    
-//     res.json({ message: 'Delivery address updated', order });
-//   } catch (err) {
-//     console.error('Error updating delivery address:', err);
-//     next(err);
-//   }
-// };
-
-// const submitOrderReview = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId);
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     if (order.order_status !== 'delivered') {
-//       return res.status(400).json({ error: 'Order must be delivered to review' });
-//     }
-
-//     const { overall_rating, comment } = req.body;
-//     if (!overall_rating || overall_rating < 1 || overall_rating > 5) {
-//       return res.status(400).json({ error: 'Rating must be between 1 and 5' });
-//     }
-
-//     const review = await models.reviews.create({
-//       order_id: order.order_id,
-//       reviewer_type: 'user',
-//       reviewer_id: req.user.user_id,
-//       reviewee_type: 'order',
-//       reviewee_id: order.order_id,
-//       overall_rating,
-//       comment,
-//       created_at: new Date(),
-//     });
-    
-//     res.status(201).json({ message: 'Review submitted', review });
-//   } catch (err) {
-//     console.error('Error submitting order review:', err);
-//     next(err);
-//   }
-// };
-
-// const rateRider = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId);
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     if (!order.rider_id) {
-//       return res.status(400).json({ error: 'No rider assigned' });
-//     }
-
-//     const { overall_rating } = req.body;
-//     if (!overall_rating || overall_rating < 1 || overall_rating > 5) {
-//       return res.status(400).json({ error: 'Rating must be between 1 and 5' });
-//     }
-
-//     const review = await models.reviews.create({
-//       order_id: order.order_id,
-//       reviewer_type: 'user',
-//       reviewer_id: req.user.user_id,
-//       reviewee_type: 'rider',
-//       reviewee_id: order.rider_id,
-//       overall_rating,
-//       created_at: new Date(),
-//     });
-
-//     // Update rider rating in delivery_assignments
-//     await models.delivery_assignments.update(
-//       { rating_by_customer: overall_rating },
-//       { where: { order_id: order.order_id, rider_id: order.rider_id } }
-//     );
-
-//     res.json({ message: 'Rider rating submitted', review });
-//   } catch (err) {
-//     console.error('Error rating rider:', err);
-//     next(err);
-//   }
-// };
-
-// const repeatOrder = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId, {
-//       include: [{ model: models.order_items, as: 'order_items' }],
-//     });
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-
-//     const newOrder = await models.orders.create({
-//       customer_id: req.user.user_id,
-//       outlet_id: order.outlet_id,
-//       subtotal: order.subtotal,
-//       delivery_fee: order.delivery_fee,
-//       tax_amount: order.tax_amount,
-//       total_amount: order.total_amount,
-//       delivery_latitude: order.delivery_latitude,
-//       delivery_longitude: order.delivery_longitude,
-//       delivery_address: order.delivery_address,
-//       order_status: 'pending',
-//       payment_status: 'pending',
-//       created_at: new Date(),
-//     });
-
-//     const orderItems = order.order_items.map(item => ({
-//       order_id: newOrder.order_id,
-//       product_id: item.product_id,
-//       product_name: item.product_name,
-//       quantity: item.quantity,
-//       unit_price: item.unit_price,
-//       total_price: item.total_price,
-//     }));
-//     await models.order_items.bulkCreate(orderItems);
-
-//     // Auto-assign rider
-//     let assignedRiderId = null;
-//     try {
-//       const [results] = await sequelize.query(
-//         'CALL sp_auto_assign_rider(:orderId, @assigned_rider_id); SELECT @assigned_rider_id AS assigned_rider_id;',
-//         { replacements: { orderId: newOrder.order_id } }
-//       );
-//       assignedRiderId = results[0]?.assigned_rider_id || null;
-//     } catch (err) {
-//       console.warn('Warning: sp_auto_assign_rider failed, continuing without rider assignment', err.message);
-//     }
-
-//     res.status(201).json({ 
-//       message: 'Order repeated successfully', 
-//       order: newOrder, 
-//       assigned_rider_id: assignedRiderId 
-//     });
-//   } catch (err) {
-//     console.error('Error repeating order:', err);
-//     next(err);
-//   }
-// };
-
-// const getDeliverySlots = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId);
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     // TODO: Implement delivery slot logic based on vendor_outlets availability
-//     res.json([]);
-//   } catch (err) {
-//     console.error('Error fetching delivery slots:', err);
-//     next(err);
-//   }
-// };
-
-// const updateDeliverySlot = async (req, res, next) => {
-//   try {
-//     const order = await models.orders.findByPk(req.params.orderId);
-    
-//     if (!order) {
-//       return res.status(404).json({ error: 'Order not found' });
-//     }
-    
-//     if (order.customer_id !== req.user.user_id) {
-//       return res.status(403).json({ error: 'Unauthorized' });
-//     }
-    
-//     if (order.order_status !== 'pending') {
-//       return res.status(400).json({ error: 'Order cannot be modified' });
-//     }
-
-//     const { delivery_slot_start, delivery_slot_end } = req.body;
-//     order.delivery_slot_start = delivery_slot_start;
-//     order.delivery_slot_end = delivery_slot_end;
-//     order.updated_at = new Date();
-//     await order.save();
-    
-//     res.json({ message: 'Delivery slot updated', order });
-//   } catch (err) {
-//     console.error('Error updating delivery slot:', err);
-//     next(err);
-//   }
-// };
-
-// module.exports = {
-//   createOrder,
-//   getUserOrders,
-//   getOrderDetails,
-//   cancelOrder,
-//   trackOrder,
-//   getOrderTimeline,
-//   updateOrderItems,
-//   updateDeliveryAddress,
-//   submitOrderReview,
-//   rateRider,
-//   repeatOrder,
-//   getDeliverySlots,
-//   updateDeliverySlot
-// };
-
-// controllers/orderController.js
 const initModels = require('../models/init-models');
 const sequelize = require('../config/db');
 const models = initModels(sequelize);
@@ -598,12 +10,285 @@ const { Op } = require('sequelize');
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
 // =========================================================================
-// CREATE ORDER
+// CREATE DRAFT ORDER (New endpoint matching Flutter)
+// =========================================================================
+exports.createDraftOrder = async (req, res) => {
+  let t;
+  
+  try {
+    t = await sequelize.transaction({
+      isolationLevel: sequelize.Transaction.ISOLATION_LEVELS.READ_COMMITTED,
+      timeout: 30000,
+    });
+
+    const {
+      user_id,
+      outlet_id,
+      vendor_id,
+      items,
+      total_price,
+      customer_email,
+      customer_phone,
+      delivery_notes,
+      delivery_address,
+      delivery_latitude,
+      delivery_longitude,
+      is_guest = false,
+    } = req.body;
+
+    if (isDevelopment) {
+      console.log('📦 Draft order creation request:', {
+        user_id,
+        outlet_id,
+        items_count: items?.length,
+        total_price,
+        is_guest,
+      });
+    }
+
+    // ✅ Validation - Allow 'guest' string for guest orders
+    if (!outlet_id) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Outlet ID is required' });
+    }
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Order must contain at least one item' });
+    }
+
+    if (!total_price || total_price <= 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Total price must be greater than 0' });
+    }
+
+    // ✅ Fix: Accept 'guest' string or is_guest flag
+    const isGuestOrder = is_guest || user_id === 'guest';
+    
+    if (!isGuestOrder && !user_id) {
+      await t.rollback();
+      return res.status(400).json({ 
+        error: 'User ID is required for authenticated orders' 
+      });
+    }
+
+    // ✅ Verify outlet exists
+    const outlet = await models.vendor_outlets.findByPk(outlet_id, {
+      attributes: ['outlet_id', 'vendor_id'],
+      include: [{
+        model: models.vendors,
+        as: 'vendor',
+        attributes: ['vendor_id', 'business_name'],
+      }],
+      transaction: t,
+    });
+
+    if (!outlet) {
+      await t.rollback();
+      return res.status(404).json({ error: 'Outlet not found' });
+    }
+
+    const resolved_vendor_id = vendor_id || outlet.vendor_id;
+    const vendor_name = outlet.vendor?.business_name || null;
+
+    // ✅ Calculate order totals
+    let subtotal = 0;
+    const validatedItems = [];
+
+    const productIds = items.map(item => item.product_id).filter(Boolean);
+    const products = await models.products.findAll({
+      where: { product_id: { [Op.in]: productIds } },
+      attributes: ['product_id', 'product_name'],
+      transaction: t,
+    });
+
+    const productMap = new Map(products.map(p => [p.product_id, p]));
+
+    for (const item of items) {
+      const { product_id, quantity, unit_price, product_name } = item;
+
+      if (!product_id || !quantity || !unit_price) {
+        await t.rollback();
+        return res.status(400).json({
+          error: 'Each item must have product_id, quantity, and unit_price',
+        });
+      }
+
+      if (quantity <= 0) {
+        await t.rollback();
+        return res.status(400).json({
+          error: `Quantity must be greater than 0 for product ${product_id}`,
+        });
+      }
+
+      let productName = product_name;
+      if (!productName) {
+        const product = productMap.get(parseInt(product_id));
+        if (!product) {
+          await t.rollback();
+          return res.status(404).json({
+            error: `Product ${product_id} not found`,
+          });
+        }
+        productName = product.product_name;
+      }
+
+      const itemTotal = parseFloat((quantity * unit_price).toFixed(2));
+      subtotal += itemTotal;
+
+      validatedItems.push({
+        product_id: parseInt(product_id),
+        product_name: productName,
+        quantity: parseInt(quantity),
+        unit_price: parseFloat(unit_price),
+        total_price: itemTotal,
+      });
+    }
+
+    // ✅ Calculate fees
+    const tax_amount = parseFloat((subtotal * 0.16).toFixed(2));
+    const delivery_fee = delivery_address ? 200.00 : 0.00;
+    const discount_amount = 0.00;
+    const total_amount = parseFloat(
+      (subtotal + tax_amount + delivery_fee - discount_amount).toFixed(2)
+    );
+
+    // ✅ Determine delivery type
+    const delivery_type = delivery_address ? 'home_delivery' : 'pickup';
+
+    // ✅ Calculate estimated delivery time
+    const estimated_delivery_time = delivery_type === 'home_delivery' 
+      ? new Date(Date.now() + 45 * 60 * 1000)
+      : null;
+
+    // ✅ Create draft order - Fix: Handle guest user_id
+    const orderData = {
+      customer_id: isGuestOrder ? null : user_id,
+      outlet_id,
+      vendor_id: resolved_vendor_id,
+      vendor_name,
+      order_status: 'draft',
+      payment_status: 'pending',
+      payment_method_id: null,
+      subtotal,
+      tax_amount,
+      delivery_fee,
+      discount_amount,
+      total_amount,
+      total_price: total_amount,
+      delivery_type,
+      delivery_address: delivery_address || null,
+      delivery_latitude: delivery_latitude || null,
+      delivery_longitude: delivery_longitude || null,
+      delivery_contact: customer_phone || null,
+      customer_note: delivery_notes || null,
+      estimated_delivery_time,
+    };
+
+    const order = await models.orders.create(orderData, { transaction: t });
+
+    if (isDevelopment) {
+      console.log('✅ Draft order created:', {
+        order_id: order.order_id,
+        order_number: order.order_number,
+        status: order.order_status,
+      });
+    }
+
+    // ✅ Create order items
+    const orderItems = validatedItems.map(item => ({
+      order_id: order.order_id,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total_price: item.total_price,
+    }));
+
+    await models.order_items.bulkCreate(orderItems, { 
+      transaction: t,
+      validate: true,
+    });
+
+    await t.commit();
+    t = null;
+
+    if (isDevelopment) {
+      console.log('✅ Draft order committed - ready for payment');
+    }
+
+    // ✅ Return response matching Flutter expectations
+    res.status(201).json({
+      success: true,
+      message: 'Draft order created successfully',
+      order: {
+        id: order.order_id.toString(),
+        order_id: order.order_id.toString(),
+        order_number: order.order_number,
+        order_status: order.order_status,
+        payment_status: order.payment_status,
+        total_amount: order.total_amount,
+        delivery_type: order.delivery_type,
+        estimated_delivery_time: order.estimated_delivery_time,
+        created_at: order.created_at,
+        customer_phone: customer_phone,
+        customer_email: customer_email || null,
+      },
+    });
+  } catch (err) {
+    if (t) {
+      try {
+        await t.rollback();
+      } catch (rollbackErr) {
+        console.error('❌ Rollback error:', rollbackErr);
+      }
+    }
+
+    console.error('❌ Draft order creation error:', err);
+
+    if (err.name === 'SequelizeValidationError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        details: err.errors?.map(e => e.message),
+      });
+    }
+
+    if (err.name === 'SequelizeForeignKeyConstraintError') {
+      return res.status(400).json({
+        error: 'Invalid reference',
+        details: 'One or more referenced entities do not exist',
+      });
+    }
+
+    if (err.name === 'SequelizeTimeoutError') {
+      return res.status(504).json({
+        error: 'Request timeout',
+        details: 'The operation took too long to complete. Please try again.',
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to create draft order',
+      ...(isDevelopment && { 
+        details: err.message, 
+        type: err.name 
+      }),
+    });
+  }
+};
+
+// =========================================================================
+// CREATE ORDER (Standard - kept for backward compatibility)
 // =========================================================================
 exports.createOrder = async (req, res) => {
-  const t = await sequelize.transaction();
-
+  let t;
+  
   try {
+    t = await sequelize.transaction({
+      isolationLevel: sequelize.Transaction.ISOLATION_LEVELS.READ_COMMITTED,
+      timeout: 30000,
+    });
+
     const {
       user_id,
       outlet_id,
@@ -630,11 +315,12 @@ exports.createOrder = async (req, res) => {
         items_count: items?.length,
         total_price,
         is_guest,
-        has_schedule: !!(scheduled_date && scheduled_time),
       });
     }
 
-    // ✅ Validation
+    // ✅ Fix: Accept 'guest' string or is_guest flag
+    const isGuestOrder = is_guest || user_id === 'guest';
+
     if (!outlet_id) {
       await t.rollback();
       return res.status(400).json({ error: 'Outlet ID is required' });
@@ -650,16 +336,16 @@ exports.createOrder = async (req, res) => {
       return res.status(400).json({ error: 'Total price must be greater than 0' });
     }
 
-    // ✅ For authenticated users, validate user_id
-    if (!is_guest && (!user_id || user_id === 'guest')) {
+    if (!isGuestOrder && !user_id) {
       await t.rollback();
       return res.status(400).json({ 
         error: 'User ID is required for authenticated orders' 
       });
     }
 
-    // ✅ Verify outlet exists and get vendor info
+    // ✅ Verify outlet exists
     const outlet = await models.vendor_outlets.findByPk(outlet_id, {
+      attributes: ['outlet_id', 'vendor_id'],
       include: [{
         model: models.vendors,
         as: 'vendor',
@@ -676,17 +362,18 @@ exports.createOrder = async (req, res) => {
     const resolved_vendor_id = vendor_id || outlet.vendor_id;
     const vendor_name = outlet.vendor?.business_name || null;
 
-    if (isDevelopment) {
-      console.log('✅ Outlet verified:', { 
-        outlet_id, 
-        vendor_id: resolved_vendor_id, 
-        vendor_name 
-      });
-    }
-
     // ✅ Calculate order totals
     let subtotal = 0;
     const validatedItems = [];
+
+    const productIds = items.map(item => item.product_id).filter(Boolean);
+    const products = await models.products.findAll({
+      where: { product_id: { [Op.in]: productIds } },
+      attributes: ['product_id', 'product_name'],
+      transaction: t,
+    });
+
+    const productMap = new Map(products.map(p => [p.product_id, p]));
 
     for (const item of items) {
       const { product_id, quantity, unit_price, product_name } = item;
@@ -705,14 +392,9 @@ exports.createOrder = async (req, res) => {
         });
       }
 
-      // Get product details (if product_name not provided)
       let productName = product_name;
       if (!productName) {
-        const product = await models.products.findByPk(product_id, {
-          attributes: ['product_id', 'product_name'],
-          transaction: t,
-        });
-
+        const product = productMap.get(parseInt(product_id));
         if (!product) {
           await t.rollback();
           return res.status(404).json({
@@ -734,45 +416,18 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // ✅ Calculate tax and delivery fee
-    const tax_amount = parseFloat((subtotal * 0.16).toFixed(2)); // 16% VAT
-    const delivery_fee = delivery_address ? 200.00 : 0.00; // KES 200 delivery fee
-    const discount_amount = 0.00; // TODO: Apply coupon if provided
+    // ✅ Calculate fees
+    const tax_amount = parseFloat((subtotal * 0.16).toFixed(2));
+    const delivery_fee = delivery_address ? 200.00 : 0.00;
+    const discount_amount = 0.00;
     const total_amount = parseFloat(
       (subtotal + tax_amount + delivery_fee - discount_amount).toFixed(2)
     );
-
-    if (isDevelopment) {
-      console.log('💰 Order calculations:', {
-        subtotal,
-        tax_amount,
-        delivery_fee,
-        discount_amount,
-        total_amount,
-        client_total: total_price,
-      });
-    }
-
-    // ✅ Validate total matches (allow small rounding differences)
-    const priceDiff = Math.abs(total_amount - parseFloat(total_price));
-    if (priceDiff > 0.10) {
-      if (isDevelopment) {
-        console.warn('⚠️ Price mismatch (proceeding with calculated total):', {
-          calculated: total_amount,
-          provided: total_price,
-          difference: priceDiff,
-        });
-      }
-      // Use calculated total to prevent manipulation
-    }
 
     // ✅ Determine delivery type
     let delivery_type = 'home_delivery';
     if (scheduled_date && scheduled_time) {
       delivery_type = 'scheduled';
-      if (isDevelopment) {
-        console.log('📅 Scheduled delivery:', { scheduled_date, scheduled_time });
-      }
     } else if (!delivery_address) {
       delivery_type = 'pickup';
     }
@@ -780,21 +435,19 @@ exports.createOrder = async (req, res) => {
     // ✅ Calculate estimated delivery time
     let estimated_delivery_time = null;
     if (delivery_type === 'scheduled' && scheduled_date && scheduled_time) {
-      // Parse scheduled date and time
       const scheduledDateTime = new Date(`${scheduled_date}T${scheduled_time}:00`);
       estimated_delivery_time = scheduledDateTime;
     } else if (delivery_type === 'home_delivery') {
-      // Estimate 45 minutes for immediate delivery
       estimated_delivery_time = new Date(Date.now() + 45 * 60 * 1000);
     }
 
-    // ✅ Create order
+    // ✅ Create order - Fix: Handle guest user_id
     const orderData = {
-      customer_id: is_guest ? null : user_id,
+      customer_id: isGuestOrder ? null : user_id,
       outlet_id,
       vendor_id: resolved_vendor_id,
       vendor_name,
-      order_status: 'pending',
+      order_status: 'draft',
       payment_status: 'pending',
       payment_method_id: null,
       subtotal,
@@ -812,16 +465,13 @@ exports.createOrder = async (req, res) => {
       estimated_delivery_time,
     };
 
-    if (isDevelopment) {
-      console.log('📝 Creating order with data:', orderData);
-    }
-
     const order = await models.orders.create(orderData, { transaction: t });
 
     if (isDevelopment) {
       console.log('✅ Order created:', {
         order_id: order.order_id,
         order_number: order.order_number,
+        status: order.order_status,
       });
     }
 
@@ -835,37 +485,19 @@ exports.createOrder = async (req, res) => {
       total_price: item.total_price,
     }));
 
-    await models.order_items.bulkCreate(orderItems, { transaction: t });
-
-    if (isDevelopment) {
-      console.log(`✅ Created ${orderItems.length} order items`);
-    }
-
-    // ✅ Try to auto-assign rider (non-blocking)
-    let assigned_rider_id = null;
-    if (!is_guest && delivery_type !== 'pickup') {
-      try {
-        const [results] = await sequelize.query(
-          'CALL sp_auto_assign_rider(:orderId, @assigned_rider_id); SELECT @assigned_rider_id AS assigned_rider_id;',
-          { 
-            replacements: { orderId: order.order_id },
-            transaction: t,
-          }
-        );
-        assigned_rider_id = results[0]?.assigned_rider_id || null;
-        
-        if (assigned_rider_id && isDevelopment) {
-          console.log('✅ Rider auto-assigned:', assigned_rider_id);
-        }
-      } catch (err) {
-        console.warn('⚠️ Rider auto-assignment failed:', err.message);
-        // Continue without rider assignment
-      }
-    }
+    await models.order_items.bulkCreate(orderItems, { 
+      transaction: t,
+      validate: true,
+    });
 
     await t.commit();
+    t = null;
 
-    // ✅ Return success response matching Flutter expectations
+    if (isDevelopment) {
+      console.log('✅ Order committed successfully');
+    }
+
+    // ✅ Return response matching Flutter expectations
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
@@ -880,10 +512,16 @@ exports.createOrder = async (req, res) => {
         estimated_delivery_time: order.estimated_delivery_time,
         created_at: order.created_at,
       },
-      assigned_rider_id: assigned_rider_id?.toString() || null,
     });
   } catch (err) {
-    await t.rollback();
+    if (t) {
+      try {
+        await t.rollback();
+      } catch (rollbackErr) {
+        console.error('❌ Rollback error:', rollbackErr);
+      }
+    }
+
     console.error('❌ Order creation error:', err);
 
     if (err.name === 'SequelizeValidationError') {
@@ -900,20 +538,273 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // Handle MySQL trigger errors
-    if (err.original?.sqlState === '45000') {
-      return res.status(400).json({
-        error: 'Validation error',
-        details: err.original.sqlMessage || err.message,
+    if (err.name === 'SequelizeTimeoutError') {
+      return res.status(504).json({
+        error: 'Request timeout',
+        details: 'The operation took too long to complete. Please try again.',
       });
     }
 
     res.status(500).json({
       error: 'Failed to create order',
-      ...(isDevelopment && { details: err.message, stack: err.stack }),
+      ...(isDevelopment && { 
+        details: err.message, 
+        type: err.name 
+      }),
     });
   }
 };
+
+// =========================================================================
+// CONFIRM ORDER (After Payment Initiation)
+// =========================================================================
+exports.confirmOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { 
+      payment_tracking_id, 
+      payment_method,
+      phone_number,
+      email 
+    } = req.body;
+
+    if (isDevelopment) {
+      console.log('✅ Confirming order:', {
+        orderId,
+        payment_tracking_id,
+        payment_method,
+      });
+    }
+
+    const order = await models.orders.findByPk(orderId);
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Check if order is in draft status
+    if (order.order_status !== 'draft') {
+      return res.status(400).json({
+        error: `Order cannot be confirmed from status: ${order.order_status}`,
+      });
+    }
+
+    // Update order to pending (payment initiated)
+    await order.update({
+      order_status: 'pending',
+      payment_status: 'pending',
+      delivery_contact: phone_number || order.delivery_contact,
+      admin_note: payment_tracking_id ? 
+        `Payment initiated: ${payment_tracking_id}` : 
+        'Payment initiated',
+    });
+
+    // Auto-assign rider in background (non-blocking)
+    if (order.delivery_type !== 'pickup') {
+      autoAssignRiderAsync(order.order_id)
+        .then(riderId => {
+          if (riderId && isDevelopment) {
+            console.log('✅ Rider auto-assigned:', riderId);
+          }
+        })
+        .catch(err => {
+          console.warn('⚠️ Background rider assignment failed:', err.message);
+        });
+    }
+
+    if (isDevelopment) {
+      console.log('✅ Order confirmed and moved to pending');
+    }
+
+    res.json({
+      success: true,
+      message: 'Order confirmed successfully',
+      order: {
+        id: order.order_id.toString(),
+        order_id: order.order_id.toString(),
+        order_number: order.order_number,
+        order_status: order.order_status,
+        payment_status: order.payment_status,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Order confirmation error:', err);
+    res.status(500).json({
+      error: 'Failed to confirm order',
+      ...(isDevelopment && { details: err.message }),
+    });
+  }
+};
+
+// =========================================================================
+// UPDATE PAYMENT STATUS (NEW - Required by Flutter)
+// =========================================================================
+exports.updatePaymentStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { 
+      payment_status,
+      transaction_id,
+      payment_reference 
+    } = req.body;
+
+    if (isDevelopment) {
+      console.log('💳 Updating payment status:', {
+        orderId,
+        payment_status,
+        transaction_id,
+      });
+    }
+
+    if (!payment_status) {
+      return res.status(400).json({ error: 'Payment status is required' });
+    }
+
+    const validStatuses = ['pending', 'paid', 'partially_paid', 'refunded', 'failed'];
+    if (!validStatuses.includes(payment_status)) {
+      return res.status(400).json({ 
+        error: 'Invalid payment status',
+        valid_statuses: validStatuses,
+      });
+    }
+
+    const order = await models.orders.findByPk(orderId);
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Update payment information
+    const updateData = {
+      payment_status,
+    };
+
+    if (transaction_id) {
+      updateData.transaction_id = transaction_id;
+    }
+
+    if (payment_reference) {
+      updateData.payment_reference = payment_reference;
+    }
+
+    // ✅ Auto-confirm if payment successful and order is draft
+    if (payment_status === 'paid' && order.order_status === 'draft') {
+      updateData.order_status = 'pending';
+      
+      if (isDevelopment) {
+        console.log('✅ Auto-confirming draft order due to successful payment');
+      }
+    }
+
+    await order.update(updateData);
+
+    // Auto-assign rider if order is now pending
+    if (updateData.order_status === 'pending' && order.delivery_type !== 'pickup') {
+      autoAssignRiderAsync(order.order_id)
+        .then(riderId => {
+          if (riderId && isDevelopment) {
+            console.log('✅ Rider auto-assigned after payment:', riderId);
+          }
+        })
+        .catch(err => {
+          console.warn('⚠️ Background rider assignment failed:', err.message);
+        });
+    }
+
+    if (isDevelopment) {
+      console.log('✅ Payment status updated successfully');
+    }
+
+    res.json({
+      success: true,
+      message: 'Payment status updated successfully',
+      order: {
+        id: order.order_id.toString(),
+        order_id: order.order_id.toString(),
+        order_number: order.order_number,
+        order_status: order.order_status,
+        payment_status: order.payment_status,
+        transaction_id: order.transaction_id,
+        payment_reference: order.payment_reference,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Update payment status error:', err);
+    res.status(500).json({
+      error: 'Failed to update payment status',
+      ...(isDevelopment && { details: err.message }),
+    });
+  }
+};
+
+// =========================================================================
+// CANCEL DRAFT ORDER (If Payment Fails/Cancelled)
+// =========================================================================
+exports.cancelDraftOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { cancellation_reason } = req.body;
+
+    const order = await models.orders.findByPk(orderId);
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Only allow cancelling draft orders
+    if (order.order_status !== 'draft') {
+      return res.status(400).json({
+        error: 'Only draft orders can be cancelled automatically',
+      });
+    }
+
+    await order.update({
+      order_status: 'canceled',
+      admin_note: cancellation_reason || 'Payment not completed',
+    });
+
+    if (isDevelopment) {
+      console.log('✅ Draft order cancelled:', order.order_number);
+    }
+
+    res.json({
+      success: true,
+      message: 'Draft order cancelled',
+      order_id: order.order_id.toString(),
+    });
+  } catch (err) {
+    console.error('❌ Cancel draft order error:', err);
+    res.status(500).json({
+      error: 'Failed to cancel order',
+      ...(isDevelopment && { details: err.message }),
+    });
+  }
+};
+
+// =========================================================================
+// HELPER: Auto-assign rider (async, non-blocking)
+// =========================================================================
+async function autoAssignRiderAsync(orderId) {
+  try {
+    const result = await sequelize.query(
+      'CALL sp_auto_assign_rider(:orderId, @assigned_rider_id)',
+      { 
+        replacements: { orderId },
+        timeout: 10000,
+      }
+    );
+
+    const [output] = await sequelize.query(
+      'SELECT @assigned_rider_id AS assigned_rider_id',
+      { timeout: 5000 }
+    );
+
+    return output[0]?.assigned_rider_id || null;
+  } catch (err) {
+    console.warn('⚠️ Rider auto-assignment failed:', err.message);
+    return null;
+  }
+}
 
 // =========================================================================
 // GET ORDER BY ID
@@ -921,10 +812,6 @@ exports.createOrder = async (req, res) => {
 exports.getOrderById = async (req, res) => {
   try {
     const { orderId } = req.params;
-
-    if (isDevelopment) {
-      console.log('📥 Fetching order:', orderId);
-    }
 
     const order = await models.orders.findByPk(orderId, {
       include: [
@@ -940,7 +827,7 @@ exports.getOrderById = async (req, res) => {
         {
           model: models.users,
           as: 'customer',
-          attributes: ['user_id', 'first_name', 'last_name', 'phone_number'],
+          attributes: ['user_id', 'first_name', 'last_name', 'phone_number', 'email'],
         },
         {
           model: models.vendors,
@@ -964,7 +851,7 @@ exports.getOrderById = async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // ✅ Check authorization
+    // Authorization check
     if (req.user) {
       const isOwner = order.customer_id && order.customer_id === req.user.account_id;
       const isAdmin = req.user.role === 'admin';
@@ -974,10 +861,6 @@ exports.getOrderById = async (req, res) => {
       if (!isOwner && !isAdmin && !isVendor && !isRider) {
         return res.status(403).json({ error: 'Access denied' });
       }
-    }
-
-    if (isDevelopment) {
-      console.log('✅ Order found:', order.order_number);
     }
 
     res.json({ 
@@ -1003,10 +886,6 @@ exports.getUserOrders = async (req, res) => {
   try {
     const userId = req.user.account_id;
     const { status, limit = 50, offset = 0 } = req.query;
-
-    if (isDevelopment) {
-      console.log('📥 Fetching orders for user:', userId);
-    }
 
     const whereClause = { customer_id: userId };
     if (status) {
@@ -1037,11 +916,6 @@ exports.getUserOrders = async (req, res) => {
       offset: parseInt(offset),
     });
 
-    if (isDevelopment) {
-      console.log(`✅ Found ${orders.length} orders`);
-    }
-
-    // Format response for Flutter app
     const formattedOrders = orders.map(order => ({
       ...order.toJSON(),
       id: order.order_id.toString(),
@@ -1062,125 +936,77 @@ exports.getUserOrders = async (req, res) => {
 };
 
 // =========================================================================
-// UPDATE ORDER STATUS
+// GET ALL ORDERS (Admin/Vendor)
 // =========================================================================
-exports.updateOrderStatus = async (req, res) => {
+exports.getAllOrders = async (req, res) => {
   try {
-    const { orderId } = req.params;
-    const { order_status } = req.body;
+    const { status, vendor_id, limit = 100, offset = 0 } = req.query;
 
-    if (!order_status) {
-      return res.status(400).json({ error: 'Order status is required' });
+    const whereClause = {};
+
+    // Filter by status if provided
+    if (status) {
+      whereClause.order_status = status;
     }
 
-    const validStatuses = [
-      'draft', 'pending', 'confirmed', 'preparing', 
-      'ready', 'dispatched', 'delivered', 'canceled', 'refunded'
-    ];
-
-    if (!validStatuses.includes(order_status)) {
-      return res.status(400).json({ 
-        error: 'Invalid order status',
-        valid_statuses: validStatuses,
-      });
+    // Vendor users can only see their own orders
+    if (req.user.role === 'vendor') {
+      whereClause.vendor_id = req.user.vendor_id;
+    } else if (vendor_id) {
+      // Admin can filter by vendor_id
+      whereClause.vendor_id = vendor_id;
     }
 
-    const order = await models.orders.findByPk(orderId);
-    
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    const orders = await models.orders.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: models.order_items,
+          as: 'order_items',
+          attributes: ['item_id', 'product_name', 'quantity', 'unit_price', 'total_price'],
+        },
+        {
+          model: models.users,
+          as: 'customer',
+          attributes: ['user_id', 'first_name', 'last_name', 'phone_number', 'email'],
+        },
+        {
+          model: models.vendors,
+          as: 'vendor',
+          attributes: ['vendor_id', 'business_name'],
+        },
+        {
+          model: models.vendor_outlets,
+          as: 'outlet',
+          attributes: ['outlet_id', 'outlet_name', 'address'],
+        },
+        {
+          model: models.riders,
+          as: 'rider',
+          attributes: ['rider_id', 'full_name', 'phone'],
+        },
+      ],
+      order: [['created_at', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+    });
 
-    // Update order status
-    await order.update({ order_status });
+    const formattedOrders = orders.map(order => ({
+      ...order.toJSON(),
+      id: order.order_id.toString(),
+      order_id: order.order_id.toString(),
+    }));
 
-    // Update timestamp fields based on status
-    if (order_status === 'dispatched' && !order.dispatched_at) {
-      await order.update({ dispatched_at: new Date() });
-    } else if (order_status === 'delivered' && !order.delivered_at) {
-      await order.update({ 
-        delivered_at: new Date(),
-        actual_delivery_time: new Date(),
-      });
-    }
-
-    if (isDevelopment) {
-      console.log('✅ Order status updated:', order.order_number, order_status);
-    }
-
-    res.json({
-      success: true,
-      message: 'Order status updated',
-      order: {
-        id: order.order_id.toString(),
-        order_id: order.order_id.toString(),
-        order_number: order.order_number,
-        order_status: order.order_status,
-      },
+    res.json({ 
+      orders: formattedOrders, 
+      count: formattedOrders.length,
+      total: formattedOrders.length
     });
   } catch (err) {
-    console.error('❌ Update order status error:', err);
+    console.error('❌ Get all orders error:', err);
     res.status(500).json({
-      error: 'Failed to update order status',
+      error: 'Failed to fetch orders',
       ...(isDevelopment && { details: err.message }),
     });
   }
-};
-
-// =========================================================================
-// CANCEL ORDER
-// =========================================================================
-exports.cancelOrder = async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { cancellation_reason } = req.body;
-
-    const order = await models.orders.findByPk(orderId);
-    
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    // Check if order can be canceled
-    if (['delivered', 'canceled', 'refunded'].includes(order.order_status)) {
-      return res.status(400).json({
-        error: `Cannot cancel order with status: ${order.order_status}`,
-      });
-    }
-
-    // Check authorization (user can only cancel their own orders)
-    if (req.user.role === 'user') {
-      if (order.customer_id !== req.user.account_id) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
-
-    await order.update({
-      order_status: 'canceled',
-      admin_note: cancellation_reason || 'Canceled by customer',
-    });
-
-    if (isDevelopment) {
-      console.log('✅ Order canceled:', order.order_number);
-    }
-
-    res.json({
-      success: true,
-      message: 'Order canceled successfully',
-      order: {
-        id: order.order_id.toString(),
-        order_id: order.order_id.toString(),
-        order_number: order.order_number,
-        order_status: order.order_status,
-      },
-    });
-  } catch (err) {
-    console.error('❌ Cancel order error:', err);
-    res.status(500).json({
-      error: 'Failed to cancel order',
-      ...(isDevelopment && { details: err.message }),
-    });
-  }
-};
-
-module.exports = exports;
+}
